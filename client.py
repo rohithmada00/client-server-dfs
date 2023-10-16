@@ -15,6 +15,7 @@ def instructions():
 
 def read_file(file_name, client_socket):
     message = file_name + '|' + 'r' + '|' + ''
+    print(f'encoded text - {message.encode()}')
     client_socket.send(message.encode())
     response = client_socket.recv(1024).decode()
     return response
@@ -60,7 +61,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             print('3')
             file_name = _input.split()[1]  
             response = read_file(file_name, s) 
-
+            print('4')
             print(f'read response {response}')
             print("Exiting <read> mode...\n")
 

@@ -1,8 +1,10 @@
 from socket import *
 
+PATH = 'replica_1/'
+
 def start_server():
     HOST = 'localhost'
-    PORT = 12345  
+    PORT = 12346  
     server_socket = socket(AF_INET,SOCK_STREAM)
     server_socket.bind((HOST, PORT))
     server_socket.listen(10)
@@ -11,7 +13,7 @@ def start_server():
 
 def read_file(file_name):
     try:
-        with open(f'files/{file_name}', 'r') as file:
+        with open(f'{PATH}{file_name}', 'r') as file:
             content = file.read()
             print('file read')
             return ('SUCCESS', content)
@@ -20,14 +22,22 @@ def read_file(file_name):
         return ('FAILURE', 'File doesnot exist in system...')
 
 def write_file(file_name, message):
-    with open(f'files/{file_name}', 'w') as file:
+    with open(f'{PATH}{file_name}', 'w') as file:
             file.write(message)
     return ('SUCCESS', 'File written successfully...')
 
+def replicate(file_name,  content):
+    file = open(f'{PATH}{file_name}', 'w')
+    file.write(content)
+    file.close()
+    print(file_name + " successfully replicated...\n")
+    return ('SUCCESS', 'File replicated successfully...')
+
 def main():
+    server = start_server()
     while(True):
         response = ''
-        conn, addr = start_server().accept()
+        conn, addr = server.accept()
         print(f'connected to {conn} {addr}...')
 
         client_message = conn.recv(1024)
@@ -46,6 +56,8 @@ def main():
                 response = read_file(file_name)
             case 'w':
                 response = write_file(file_name, message)
+            case 'rep':
+                response = replicate(file_name, message)
             case _:
                 print('Invalid operation.Please try again !!')
         

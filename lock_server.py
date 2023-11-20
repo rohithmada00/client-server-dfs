@@ -2,9 +2,11 @@ from socket import *
 from collections import defaultdict
 
 HOST = "127.0.0.1" 
-PORT = 12345  
+PORT = 12367 
 
-def check_status_file(filename, filename_locked_status):
+def check_status_file(filename, filename_locked_status:dict):
+    if(filename not in filename_locked_status.keys()):
+        filename_locked_status['filename'] = 'unlocked'
     return filename_locked_status.get(filename, "unlocked") == "unlocked"
 
 def main():
@@ -21,10 +23,11 @@ def main():
         connection_socket, address = s.accept()
         try:
             msg_received = connection_socket.recv(1024).decode()
-            client_id, command, filename =  msg_received.split()
+            client_id, command, filename =  msg_received.split('|')
 
             if command == "LOCK":
                 unlocked = check_status_file(filename, filename_locked_status)
+                # print("my unlocked status",unlocked)
                 if unlocked:
                     if not filename_clients_status[filename]:  # If no clients are waiting
                         filename_locked_status[filename] = "locked"
@@ -61,6 +64,7 @@ def main():
 
         except Exception as e:
             print(f"An exception occurred: {e}")
+            # pass
         finally:
             connection_socket.close()
 

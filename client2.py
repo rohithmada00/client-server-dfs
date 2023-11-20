@@ -2,7 +2,7 @@ import socket
 import time
 
 HOST = "127.0.0.1" 
-PORT = 12345  
+PORT = 12347
 
 def instructions():
     # instructions to the user

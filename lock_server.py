@@ -27,16 +27,14 @@ def main():
 
             if command == "LOCK":
                 unlocked = check_status_file(filename, filename_locked_status)
-                # print("my unlocked status",unlocked)
                 if unlocked:
-                    if not filename_clients_status[filename]:  # If no clients are waiting
+                    if not filename_clients_status[filename]:  
                         filename_locked_status[filename] = "locked"
                         allow_message = "file granted"
                         connection_socket.send(allow_message.encode())
                     else:
-                        # Check if client is first in the queue
                         if filename_clients_status[filename][0] == client_id:
-                            filename_clients_status[filename].pop(0)  # Remove from queue
+                            filename_clients_status[filename].pop(0)  
                             filename_locked_status[filename] = "locked"
                             allow_message = "file granted"
                             connection_socket.send(allow_message.encode())
@@ -58,13 +56,12 @@ def main():
                     filename_locked_status[filename] = "unlocked"
                     if filename_clients_status[filename]:
                         new_client = filename_clients_status[filename].pop(0)
-                        client_timeout_status[new_client] = 0  # Reset timeout for next client
+                        client_timeout_status[new_client] = 0  
                     unlock_message = "file unlocked"
                     connection_socket.send(unlock_message.encode())
 
         except Exception as e:
             print(f"An exception occurred: {e}")
-            # pass
         finally:
             connection_socket.close()
 

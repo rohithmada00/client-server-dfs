@@ -1,4 +1,23 @@
+import json
 from socket import *
+import sqlite3
+
+'''
+
+    Its the main server
+    Every client contacts this server
+    It stores metadata about all the file servers
+    Client can request info about files
+
+    {
+        file_name : 'file_name',
+        primary_server : 'primary_server',
+        replicas : 'replicas',
+        latest_commit_id : 'commit_id',
+    }
+
+'''
+
 
 def start_server():
     HOST = 'localhost'
@@ -9,43 +28,42 @@ def start_server():
     print ('File server is up...')
     return server_socket
 
-def read_file(file_name):
+def get_metadata():
+    connection = sqlite3.connect("metadata.db")
+    cur = connection.cursor()
+    res = cur.execute("SELECT name FROM sqlite_master WHERE name='spam'")
+    pass
+
+def update_metadata():
     try:
-        with open(f'files/{file_name}', 'r') as file:
-            content = file.read()
-            print('file read')
-            return ('SUCCESS', content)
-    except IOError:
-        print(f'{file_name} doesnot exist')
-        return ('FAILURE', 'File doesnot exist in system...')
+        connection = sqlite3.connect("metadata.db")
+        cur = connection.cursor()
+        # Store metadata in the database
+        cur.execute('''
+            INSERT OR REPLACE INTO metadata (file_path, primary_server, replicas)
+            VALUES (?, ?, ?)
+        ''', (file_path, primary_server, replicas))
 
-def write_file(file_name, message):
-    with open(f'files/{file_name}', 'w') as file:
-            file.write(message)
-    replicate(file_name)
-    return ('SUCCESS', 'File written successfully...')
-
-def message_to_server(ip_addr, port, message):
-	print("Replicating to fileserver {ip_addr} {port}")
-	server_socket = socket(AF_INET, SOCK_STREAM)
-	server_socket.connect((ip_addr,port))
-	server_socket.send(message.encode())
-	server_socket.close()
-
-def replicate(file_name):
-    file = open(f'files/{file_name}', 'r')
-    content = file.read()
-    file.close()
-
-    message = file_name + '|' + 'rep' + '|' + content
-
-    # replicate to slave server 1
-    message_to_server('localhost', 12346, message)
-
-    # replicate to slave server 2
-    # message_to_server('localhost', 12347, message)
+        # Commit the changes to the database
+        connection.commit()
+        return True
+    except:
+        return False
 
 def main():
+    conn = sqlite3.connect('dfs.db')
+    cursor = conn.cursor()
+
+    # Create a table to store metadata if it doesn't exist
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS metadata (
+            file_path TEXT PRIMARY KEY,
+            primary_server TEXT,
+            replicas TEXT,
+            latest_commit_id TEXT,
+        )
+    ''')
+
     server = start_server()
     conn, addr = server.accept()
     while(True):
@@ -58,6 +76,7 @@ def main():
         client_message = client_message.decode()
 
         print(f'client message - {client_message}')
+        client_message = json.loads(client_message)
 
         file_name =  client_message.split("|")[0]
         operation =  client_message.split("|")[1]
@@ -66,10 +85,10 @@ def main():
         print(f'file name {file_name} , operation {operation}, message {message}')
 
         match operation:
-            case 'r':
-                response = read_file(file_name)
-            case 'w':
-                response = write_file(file_name, message)
+            case 'get_metadata':
+                response = get_metadata(file_name)
+            case 'update_metadata':
+                response = update_metadata(file_name, message)
             case _:
                 print('Invalid operation.Please try again !!')
         

@@ -1,5 +1,7 @@
 import socket
 import time
+import json
+import client_lib as client_lib
 
 HOST = "127.0.0.1" 
 PORT = 12345  
@@ -14,16 +16,17 @@ def instructions():
     print ("<quit> - exits the application")
     print ("-------------------------------------------------------\n")
 
-def read_file(file_name, client_socket):
-    message = file_name + '|' + 'r' + '|' + ''
-    print(f'encoded text - {message.encode()}')
-    client_socket.send(message.encode())
-    response = client_socket.recv(1024).decode()
-    return response
+def read_file(file_name):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect((HOST, PORT))
+        message = {'operation': 'get_metadata', 'file_path': file_name}
+        json_data = json.dumps(message)
+        print(f'encoded text - {json_data.encode()}')
+        s.send(json_data.encode())
+        response = s.recv(1024).decode()
+        return response
     
-
 def write_file(file_name, client_socket):
-
     # locking the file
     grant_lock = lock_unlock_file('client 2', file_name, "lock")
 
@@ -81,40 +84,39 @@ def check_valid_input(file_name):
     return '.txt' in file_name
     
 
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-    s.connect((HOST, PORT))
-    while(True):
-        instructions()
-        _input = input()
-        print('1')
-        if "<write>" in _input:
-            while not check_valid_input(_input):    
-                 _input = input('Invalid input ; please try using a valid name')
-            
-            file_name = _input.split()[1]     
-            response = write_file(file_name, s)  
 
-            print(f'write response {response}')
-            print ("Exiting <write> mode...\n")
-            
-        elif "<read>" in _input:
-            print('2')
-            while not check_valid_input(_input):   
-                 _input = input('Invalid input ; please try using a valid name')
-            print('3')
-            file_name = _input.split()[1]  
-            response = read_file(file_name, s) 
-            print('4')
-            print(f'read response {response}')
-            print("Exiting <read> mode...\n")
+while(True):
+    instructions()
+    _input = input()
+    if "<write>" in _input:
+        while not check_valid_input(_input):    
+                _input = input('Invalid input ; please try using a valid name')
+        
+        file_name = _input.split()[1]     
+        response = write_file(file_name)  
 
+        print(f'write response {response}')
+        print ("Exiting <write> mode...\n")
+        
+    elif "<read>" in _input:
+        while not check_valid_input(_input):   
+                _input = input('Invalid input ; please try using a valid name')
+        file_name = _input.split()[1]  
+        # check in cache
+        if(client_lib.in_cache(file_name)):
+            response = client_lib.cache(file_name, None, 'r')
         else:
-            match _input:
-                case '<list>':
-                    list_files()
-                case '<instructions>':
-                    instructions()
-                case '<exit>':
-                    break
-                case _:
-                    print('Invalid query.Please try again !!')
+            response = read_file(file_name) 
+            print(f'read response {response}')
+        print("Exiting <read> mode...\n")
+
+    else:
+        match _input:
+            case '<list>':
+                list_files()
+            case '<instructions>':
+                instructions()
+            case '<exit>':
+                break
+            case _:
+                print('Invalid query.Please try again !!')

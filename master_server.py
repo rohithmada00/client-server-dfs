@@ -1,4 +1,5 @@
 from socket import *
+import os
 
 def start_server():
     HOST = 'localhost'
@@ -43,7 +44,7 @@ def replicate(file_name):
     message_to_server('localhost', 12346, message)
 
     # replicate to slave server 2
-    # message_to_server('localhost', 12347, message)
+    message_to_server('localhost', 12347, message)
 
 def main():
     server = start_server()
@@ -72,6 +73,7 @@ def main():
                 response = write_file(file_name, message)
             case _:
                 print('Invalid operation.Please try again !!')
+            
         
         conn.send(response[1].encode())
 

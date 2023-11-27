@@ -4,7 +4,7 @@ PATH = 'replica_1/'
 
 def start_server():
     HOST = 'localhost'
-    PORT = 12346  
+    PORT = 11234  
     server_socket = socket(AF_INET,SOCK_STREAM)
     server_socket.bind((HOST, PORT))
     server_socket.listen(10)

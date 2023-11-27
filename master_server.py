@@ -2,98 +2,118 @@ import json
 from socket import *
 import sqlite3
 
-'''
+class MasterServer:
+    def __init__(self):
+        self.available_servers = ["11234", "11235", "11236", '11237', '11238']
 
-    Its the main server
-    Every client contacts this server
-    It stores metadata about all the file servers
-    Client can request info about files
-
-    {
-        file_name : 'file_name',
-        primary_server : 'primary_server',
-        replicas : 'replicas',
-        latest_commit_id : 'commit_id',
-    }
-
-'''
-
+    def select_servers(self):
+        # Round robin for server selection
+        selected_primary = self.available_servers.pop(0)
+        selected_replicas = self.available_servers[:2]
+        self.available_servers.append(selected_primary)  # Move primary to the end for the next round
+        return selected_primary, selected_replicas
 
 def start_server():
     HOST = 'localhost'
-    PORT = 12345  
-    server_socket = socket(AF_INET,SOCK_STREAM)
+    PORT = 12345
+    server_socket = socket(AF_INET, SOCK_STREAM)
     server_socket.bind((HOST, PORT))
     server_socket.listen(10)
-    print ('File server is up...')
+    print('Master server is up...')
     return server_socket
 
-def get_metadata():
-    connection = sqlite3.connect("metadata.db")
-    cur = connection.cursor()
-    res = cur.execute("SELECT name FROM sqlite_master WHERE name='spam'")
-    pass
+def get_metadata(file_path):
+    connection = sqlite3.connect("dfs.db")
+    cursor = connection.cursor()
+    cursor.execute("SELECT * FROM metadata WHERE file_path=?", (file_path,))
+    result = cursor.fetchone()
+    connection.close()
+    return result
 
-def update_metadata():
+def update_metadata(file_path, primary_server, replicas, latest_commit_id):
     try:
-        connection = sqlite3.connect("metadata.db")
-        cur = connection.cursor()
-        # Store metadata in the database
-        cur.execute('''
-            INSERT OR REPLACE INTO metadata (file_path, primary_server, replicas)
-            VALUES (?, ?, ?)
-        ''', (file_path, primary_server, replicas))
-
-        # Commit the changes to the database
+        connection = sqlite3.connect("dfs.db")
+        cursor = connection.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO metadata (file_path, primary_server, replicas, latest_commit_id)
+            VALUES (?, ?, ?, ?)
+        ''', (file_path, primary_server, json.dumps(replicas), latest_commit_id))
         connection.commit()
-        return True
-    except:
-        return False
+        connection.close()
+        return {'status': 'success'}
+    except Exception as e:
+        print(f"Error updating metadata: {e}")
+        return {'status': 'error', 'message': str(e)}
+
+def create_file(file_path, master_server):
+    try:
+        if(get_metadata(file_path) is None):
+            primary_server, replicas = master_server.select_servers()
+            # Update metadata in the database
+            update_metadata(file_path, primary_server, replicas, '')
+
+            return {'status': 'success', 'primary_server': primary_server, 'replicas': replicas, 'latest_commit_id': 0}
+        else:
+            return {'status': 'error', 'message': 'File already exists'}
+    except Exception as e:
+        print(f"Error creating file: {e}")
+        return {'status': 'error', 'message': str(e)}
 
 def main():
     conn = sqlite3.connect('dfs.db')
     cursor = conn.cursor()
 
-    # Create a table to store metadata if it doesn't exist
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS metadata (
             file_path TEXT PRIMARY KEY,
             primary_server TEXT,
             replicas TEXT,
-            latest_commit_id TEXT,
+            latest_commit_id TEXT
         )
     ''')
-
+    master_server = MasterServer()
     server = start_server()
-    conn, addr = server.accept()
-    while(True):
-        response = ''
-        if(conn == None):
+
+    try:
+        while True:
             conn, addr = server.accept()
-        print(f'connected to {conn} {addr}...')
+            print(f'Connected to {addr}...')
 
-        client_message = conn.recv(1024)
-        client_message = client_message.decode()
+            client_message = conn.recv(1024)
+            client_message = client_message.decode()
 
-        print(f'client message - {client_message}')
-        client_message = json.loads(client_message)
+            print(f'Client message - {client_message}')
+            client_message = json.loads(client_message)
 
-        file_name =  client_message.split("|")[0]
-        operation =  client_message.split("|")[1]
-        message =  client_message.split("|")[2]
+            file_path = client_message.get('file_path', '')
+            operation = client_message.get('operation', '')
+            message = client_message.get('message', {})
 
-        print(f'file name {file_name} , operation {operation}, message {message}')
+            print(f'File path: {file_path}, Operation: {operation}, Message: {message}')
 
-        match operation:
-            case 'get_metadata':
-                response = get_metadata(file_name)
-            case 'update_metadata':
-                response = update_metadata(file_name, message)
-            case _:
-                print('Invalid operation.Please try again !!')
-        
-        conn.send(response[1].encode())
+            response = None
+            match operation:
+                case 'create_file':
+                    response = create_file(file_path, master_server)
+                case 'get_metadata':
+                    response = get_metadata(file_path)
+                case 'update_metadata':
+                    primary_server = message.get('primary_server', '')
+                    replicas = message.get('replicas', [])
+                    latest_commit_id = message.get('latest_commit_id', '')
+                    response = update_metadata(file_path, primary_server, replicas, latest_commit_id)
+                case _:
+                    print('Invalid operation. Please try again !!')
+                    response = {'status': 'error', 'message': 'Invalid operation'}
+
+            if response is not None:
+                conn.send(json.dumps(response).encode())
+
+    except KeyboardInterrupt:
+        print("\nServer shutting down...")
+
+    finally:
+        conn.close()
 
 if __name__ == '__main__':
     main()
- 

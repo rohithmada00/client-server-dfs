@@ -199,6 +199,7 @@ def write_file_globally(file_name, message, lease_duration, conn :socket):
         response = json.loads(response)
         data = response.get('content')
         primary_server = data['primary_server']
+        replicas = data['replicas']
         server_socket.close()
 
         if primary_server is None:
@@ -207,10 +208,13 @@ def write_file_globally(file_name, message, lease_duration, conn :socket):
 
         else:
             # TODO: contact primary to request lease
+            print('trying to lease...')
             message = {'file_name': file_name, 'operation': 'lease', 'lease_duration': 120}
             message = json.dumps(message).encode()
             server_socket = contact_data_server(port=primary_server)
+            server_socket.send(message)
             encoded_response = server_socket.recv(1024)
+            print(f'lease response - {encoded_response}')
             response = encoded_response.decode()
             response = json.loads(response)
             status = response.get('status', '')
@@ -229,15 +233,23 @@ def write_file_globally(file_name, message, lease_duration, conn :socket):
                 message = response.get('message')
 
             if(status == 'success'):
-                response = server_socket.recv(1024).decode()
+                conn.send(encoded_response)
+                print('need to get content...')
+                response = conn.recv(1024).decode()
+                print(f'recieved content is {response}')
                 response = json.loads(response)
                 content = response.get('content')
 
-                message = {'file_name': file_name, 'operation': 'w', 'content': content}
-                message = json.dumps(message).encode()
-                server_socket.send(message)
-                response = server_socket.recv(1024).decode()
-                response = json.loads(response)
+                # save locally
+                print(f' file created or updated at.. {PATH}{file_name}')
+                with open(f'{PATH}{file_name}', 'w') as file:
+                    file.write(content)
+                    file.close()
+
+                # TODO: replicate
+                print(f'primary is {primary_server}')
+                print(f'replicas are {replicas}')
+                # replicate(file_name, replicas)
                 status = response.get('status', 'error')
                 message = response.get('message')
                 if(status != 'success'):
@@ -249,7 +261,7 @@ def write_file_globally(file_name, message, lease_duration, conn :socket):
 
     except Exception as e:
         print(f'Error writing {file_name}: {e}')
-        return ('FAILURE', f'Error writing {file_name} to the data server: {e}')
+        return {'status' : 'error', 'message' : f'Error writing {file_name} to the data server: {e}'}
     
 # def create_file(file_name):
 #     try:
@@ -283,15 +295,21 @@ def replicate(file_name, replicas):
 
     message = {'file_name': file_name, 'operation': 'rep', 'content': content}
 
-    # TODO: Replicate
-    # for replica in replicas:
-    #     message_to_server('localhost', replica, message)
-
-def replicate(file_name,  content):
+    for replica in replicas:
+        server_socket = contact_data_server(port=int(replica))
+        server_socket.send(json.dumps(response).encode())
+        response = server_socket.recv(1024).decode()
+        response = json.loads(response)
+        message = response.get('message')
+        print(f'response from {replica}')
+        print(message)
+        
+def save(file_name,  content):
     with open(f'{PATH}{file_name}', 'w') as file:
             file.write(content)
     print(file_name + " successfully replicated...\n")
-    return ('SUCCESS', 'File replicated successfully...')
+    return {'status': 'success', 'message':'file replicated successfully..'}
+
 
 def main():
     data_server = DataServer()
@@ -322,8 +340,7 @@ def main():
             case 'rep':
                 response = replicate(file_name, message)
             case 'lease':
-                lease_manager.request_lease(file_name, addr[0] + str(addr[1]), conn, lease_duration)
-                response = ('SUCCESS', 'Lease granted')
+                response = lease_manager.request_lease(file_name, addr[0] + str(addr[1]), conn, lease_duration)
             case _:
                 print('Invalid operation. Please try again !!')
 

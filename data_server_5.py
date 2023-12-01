@@ -289,10 +289,14 @@ def write_file_globally(file_name, message, lease_duration, conn :socket):
                 # update nameserver with updated metadata
                 ns_conn = contact_name_server()
                 message = {
-                    "file_path": file_name,
-                    "primary_server": primary_server,
-                    "replicas": replicas+[PORT],
-                    "latest_commit_id": int(latest_commit_id)+1 if latest_commit_id is not None else latest_commit_id
+                    'file_path' : file_name,
+                    'operation' : 'update_metadata',
+                    'content' : {
+                                    "file_path": file_name,
+                                    "primary_server": primary_server,
+                                    "replicas": replicas+[PORT],
+                                    "latest_commit_id": str(int(latest_commit_id)+1) if latest_commit_id is not None else latest_commit_id
+                                }
                 }
                 message = json.dumps(message).encode()
                 ns_conn.send(message)

@@ -6,7 +6,7 @@ import time
 
 class MasterServer:
     def __init__(self):
-        self.available_servers = ['11234', '11235', '11236', '11237', '11238', ]
+        self.available_servers = ['11234', '11235', '11236', ]
         self.server_check_interval = 60
         # self.server_check_thread = threading.Thread(target=self.periodic_server_check)
         # self.server_check_thread.daemon = True
@@ -127,7 +127,7 @@ def handle_client(conn: socket, addr, data_service: DataService, master_server):
 
     file_path = client_message.get('file_path', '')
     operation = client_message.get('operation', '')
-    message = client_message.get('message', {})
+    content = client_message.get('content', {})
     server_id = addr
 
     print(f'File path: {file_path}, Operation: {operation}, Server id: {server_id}')
@@ -139,9 +139,9 @@ def handle_client(conn: socket, addr, data_service: DataService, master_server):
         case 'get_metadata':
             response = data_service.get_metadata(file_path)
         case 'update_metadata':
-            primary_server = message.get('primary_server', '')
-            replicas = message.get('replicas', [])
-            latest_commit_id = message.get('latest_commit_id', '')
+            primary_server = content.get('primary_server', '')
+            replicas = content.get('replicas', [])
+            latest_commit_id = content.get('latest_commit_id', '')
             response = data_service.update_metadata(file_path, primary_server, replicas, latest_commit_id)
         case _:
             print('Invalid operation. Please try again !!')

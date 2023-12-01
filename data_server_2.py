@@ -5,7 +5,7 @@ from collections import defaultdict
 from threading import Event, Thread
 
 PATH = 'replica_2/'
-PORT = 11235
+PORT = 11235 
 
 class DataServer:
     FILE_PATH = f'{PATH}primaries.json'
@@ -19,7 +19,7 @@ class DataServer:
                 self.primaries = json.load(file)
         except FileNotFoundError:
             # If the file doesn't exist, initialize with a default value
-            self.primaries = ['doodle.txt']
+            self.primaries = ['sks.txt']
 
     def save_primaries(self):
         with open(self.FILE_PATH, 'w') as file:
@@ -113,7 +113,7 @@ class LeaseManager:
                 self.grant_event.set()  # Set the event to signal that the lease is granted to the next client
 
 def start_server():
-    HOST = 'localhost' 
+    HOST = 'localhost'
     server_socket = socket(AF_INET,SOCK_STREAM)
     server_socket.bind((HOST, PORT))
     server_socket.listen(10)

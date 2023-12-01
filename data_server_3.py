@@ -4,8 +4,8 @@ import time
 from collections import defaultdict
 from threading import Event, Thread
 
-PATH = 'replica_1/'
-PORT = 11234 
+PATH = 'replica_3/'
+PORT = 11236
 
 class DataServer:
     FILE_PATH = f'{PATH}primaries.json'
@@ -19,7 +19,7 @@ class DataServer:
                 self.primaries = json.load(file)
         except FileNotFoundError:
             # If the file doesn't exist, initialize with a default value
-            self.primaries = ['doodle.txt']
+            self.primaries = []
 
     def save_primaries(self):
         with open(self.FILE_PATH, 'w') as file:

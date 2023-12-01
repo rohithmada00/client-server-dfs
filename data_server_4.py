@@ -4,8 +4,8 @@ import time
 from collections import defaultdict
 from threading import Event, Thread
 
-PATH = 'replica_1/'
-PORT = 11234 
+PATH = 'replica_4/'
+PORT = 11237
 
 class DataServer:
     FILE_PATH = f'{PATH}primaries.json'

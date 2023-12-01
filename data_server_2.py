@@ -5,11 +5,29 @@ from collections import defaultdict
 from threading import Event, Thread
 
 PATH = 'replica_2/'
+PORT = 11235
 
 class DataServer:
+    FILE_PATH = f'{PATH}primaries.json'
+
     def __init__(self):
-        self.primaries = ['sks.txt',]
-        # self.version_vectors = defaultdict(dict)
+        self.load_primaries()
+
+    def load_primaries(self):
+        try:
+            with open(self.FILE_PATH, 'r') as file:
+                self.primaries = json.load(file)
+        except FileNotFoundError:
+            # If the file doesn't exist, initialize with a default value
+            self.primaries = ['doodle.txt']
+
+    def save_primaries(self):
+        with open(self.FILE_PATH, 'w') as file:
+            json.dump(self.primaries, file)
+
+    def add_primary(self, file_name):
+        self.primaries.append(file_name)
+        self.save_primaries()
 
 class LeaseManager:
     def __init__(self, expiration_check_interval=10):
@@ -95,8 +113,7 @@ class LeaseManager:
                 self.grant_event.set()  # Set the event to signal that the lease is granted to the next client
 
 def start_server():
-    HOST = 'localhost'
-    PORT = 11235
+    HOST = 'localhost' 
     server_socket = socket(AF_INET,SOCK_STREAM)
     server_socket.bind((HOST, PORT))
     server_socket.listen(10)
@@ -182,8 +199,17 @@ def write_file_locally(file_name, conn: socket, lease_manager: LeaseManager):
         with open(f'{PATH}{file_name}', 'w') as file:
             file.write(content)
 
-        # TODO: Replicate
-        # replicate(file_name, replicas)
+        server_socket = contact_name_server()
+        message = {'operation': 'get_metadata', 'file_path': file_name}
+        message = json.dumps(message).encode()
+        server_socket.send(message)
+        response = server_socket.recv(1024).decode()
+        response = json.loads(response)
+        data = response.get('content')
+        replicas = data['replicas']
+        server_socket.close()
+
+        replicate(file_name, replicas)
         return { 'status': 'success', 'message': f'successfully written to file'}
     except Exception as e:
         return { 'status': 'error', 'message': f'exception writing to file{e}'}
@@ -198,14 +224,19 @@ def write_file_globally(file_name, message, lease_duration, conn :socket):
         response = server_socket.recv(1024).decode()
         response = json.loads(response)
         data = response.get('content')
-        primary_server = data['primary_server']
-        replicas = data['replicas']
-        server_socket.close()
 
-        if primary_server is None:
+        if data is None:
             print(f'File {file_name} does not exist in the file system')
             return {'status' : 'error', 'message' : 'File does not exist in the system...'}
+        
+        primary_server = data['primary_server']
+        replicas = data['replicas']
+        latest_commit_id = data['latest_commit_id']
+        server_socket.close()
 
+        if primary_server is  None:
+            print(f'File {file_name} does not exist in the file system')
+            return {'status' : 'error', 'message' : 'File does not exist in the system...'}
         else:
             # TODO: contact primary to request lease
             print('trying to lease...')
@@ -241,13 +272,35 @@ def write_file_globally(file_name, message, lease_duration, conn :socket):
                 content = response.get('content')
 
                 # save locally
+                print(f' file created or updated at.. {PATH}{file_name}')
                 with open(f'{PATH}{file_name}', 'w') as file:
                     file.write(content)
+                    file.close()
 
                 # replicate
-                replicate(file_name, replicas)
+                print(f'primary is {primary_server}')
+                print(f'replicas are {replicas}')
+                response = replicate(file_name, [primary_server]+replicas)
+                print(f'replication result is {response}')
                 status = response.get('status', 'error')
                 message = response.get('message')
+
+                # update nameserver with updated metadata
+                ns_conn = contact_name_server()
+                message = {
+                    "file_path": file_name,
+                    "primary_server": primary_server,
+                    "replicas": replicas+[PORT],
+                    "latest_commit_id": int(latest_commit_id)+1 if latest_commit_id is not None else latest_commit_id
+                }
+                message = json.dumps(message).encode()
+                ns_conn.send(message)
+                response = ns_conn.recv(1024).decode()
+                response = json.loads(response)
+                status = response.get('status')
+                print(f'updating metadata result is {response}')
+                ns_conn.close()
+                
                 if(status != 'success'):
                     print('Error writing file')
                     return {'status' : 'error', 'message' : 'Error writing file...'}
@@ -259,52 +312,85 @@ def write_file_globally(file_name, message, lease_duration, conn :socket):
         print(f'Error writing {file_name}: {e}')
         return {'status' : 'error', 'message' : f'Error writing {file_name} to the data server: {e}'}
     
-# def create_file(file_name):
-#     try:
-#         # get info about primary
-#         message = {'operation': 'get_metadata', 'file_path': file_name}
-#         message = json.dumps(message).encode()
-#         response = message_to_server('localhost', 12345, message)
-#         primary_server = response.get('primary_server')
+def create_file(file_name, conn: socket):
+    try:
+        # update nameserver with updated metadata
+        ns_conn = contact_name_server()
+        message = {
+            "file_path": file_name,
+            'operation': 'create_file'
+        }
+        message = json.dumps(message).encode()
+        ns_conn.send(message)
+        response = ns_conn.recv(1024).decode()
+        response = json.loads(response)
+        status = response.get('status', 'error')
+        data = response.get('content')
+        replicas = response.get('replicas')
+        ns_conn.close()
 
-#         if primary_server is None:
-#             print(f'File {file_name} does not exist in the file system')
-#             return ('FAILURE', 'File does not exist in the system...')
+        if status == 'success':
+            # this server will be the files primary
+            message = {'status' : 'success', 'message' : f'{file_name} can be created.. please enter the content'}
+            print(message)
+            message = json.dumps(message).encode()
+            conn.send(message)
+            # take input 
+            print('got input from client')
+            response = conn.recv(1024).decode()
+            response = json.loads(response)
+            content = response.get('content')
+            # save locally
+            with open(f'{PATH}{file_name}', 'w') as file:
+                    file.write(content)
+                    file.close()
+            response = replicate(file_name, replicas)
+            print(response)
 
-#         else:
-#             # contact primary
-#             message = {'file_name': file_name, 'operation': 'r'}
-#             message = json.dumps(message).encode()
-#             response = message_to_server('localhost', primary_server, message)
+            return {'status': 'success', 'message': 'File created successfully..'}
 
-#             print('File read successful')
-#             return response['message']  # Return content from the response
-
-#     except Exception as e:
-#         print(f'Error fetching {file_name}: {e}')
-#         return ('FAILURE', f'Error fetching {file_name} from the data server: {e}')
+        else:
+            print(f'File {file_name} already exists in the file system')
+            return  {'status' : 'error', 'message' : f'{file_name} already exists in file system: {e}'}
+            
+    except Exception as e:
+        print(f'Error creating {file_name}: {e}')
+        return {'status' : 'error', 'message' : f'Error creating {file_name} to the data server: {e}'}
 
 def replicate(file_name, replicas):
-    file = open(f'files/{file_name}', 'r')
+    file = open(f'{PATH}/{file_name}', 'r')
     content = file.read()
     file.close()
 
     message = {'file_name': file_name, 'operation': 'rep', 'content': content}
 
     for replica in replicas:
-        server_socket = contact_data_server(port=int(replica))
-        server_socket.send(json.dumps(response).encode())
-        response = server_socket.recv(1024).decode()
-        response = json.loads(response)
-        message = response.get('message')
-        print(f'response from {replica}')
-        print(message)
+        try:
+            server_socket = contact_data_server(port=int(replica))
+            server_socket.send(json.dumps(message).encode())
+            response = server_socket.recv(1024).decode()
+            response = json.loads(response)
+            status = response.get('status')
+            message = response.get('message')
+            print(f'response from {replica}')
+            print(message)
+
+            # in pessimistic replication every replica should be consistant
+            # failure in doing so leads to failed operation
+            if status != 'success':
+                return response
+        except Exception as e:
+            return {'status': 'error', 'message': f'failed to replicate due to {e}'}
+        
+    return {'status': 'success', 'message': 'file replicated successfully..'}
+    
         
 def save(file_name,  content):
     with open(f'{PATH}{file_name}', 'w') as file:
             file.write(content)
     print(file_name + " successfully replicated...\n")
     return {'status': 'success', 'message':'file replicated successfully..'}
+
 
 def main():
     data_server = DataServer()
@@ -323,7 +409,6 @@ def main():
         file_name = client_message.get('file_name', '')
         operation = client_message.get('operation', '')
         message = client_message.get('message', '')
-        content = client_message.get('content', '')
         lease_duration = client_message.get('lease_duration', 120)
 
         print(f'file name {file_name}, operation {operation}, message {message}')
@@ -333,16 +418,18 @@ def main():
                 response = read_file_locally(file_name) if file_name in data_server.primaries else read_file_globally(file_name)
             case 'w':
                 response = write_file_locally(file_name, conn, lease_manager) if file_name in data_server.primaries else write_file_globally(file_name, message, lease_duration, conn)
+            case 'c':
+                response = create_file(file_name, conn)
+                if(response['status'] == 'success'):
+                    data_server.add_primary(file_name)
             case 'rep':
-                response = save(file_name, content)
+                response = replicate(file_name, message)
             case 'lease':
                 response = lease_manager.request_lease(file_name, addr[0] + str(addr[1]), conn, lease_duration)
             case _:
                 print('Invalid operation. Please try again !!')
 
-        print(f'response after operation {operation} - {response}')
         conn.send(json.dumps(response).encode())
-        conn.close()
 
 if __name__ == '__main__':
     main()

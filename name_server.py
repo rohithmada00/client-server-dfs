@@ -85,15 +85,34 @@ class DataService:
             print(f"Error updating metadata: {e}")
             return {'status': 'error', 'message': str(e)}
 
-    def create_file(self, file_path, master_server):
+    def create_file(self, file_path, master_server: MasterServer, conn=None):
         try:
-            if(self.get_metadata(file_path) is None):
-                primary_server, replicas = master_server.select_servers()
-                self.update_metadata(file_path, primary_server, replicas, '')
+            metadata = self.get_metadata(file_path)
 
-                return {'status': 'success', 'primary_server': primary_server, 'replicas': replicas, 'latest_commit_id': 0}
+            if metadata is None:
+                # File doesn't exist, proceed to create
+                if conn is not None:
+                    primary_server = str(conn[1])
+                else:
+                    primary_server, replicas = master_server.select_servers()
+
+                # Add metadata to the database
+                self.update_metadata(file_path, primary_server, replicas, '0')
+
+                return {
+                    'status': 'success',
+                    'message': 'File created successfully',
+                    'file_info': {
+                        'file_path': file_path,
+                        'primary_server': primary_server,
+                        'replicas': replicas,
+                        'latest_commit_id': '0'
+                    }
+                }
             else:
+                # File already exists, return an error
                 return {'status': 'error', 'message': 'File already exists'}
+
         except Exception as e:
             print(f"Error creating file: {e}")
             return {'status': 'error', 'message': str(e)}
@@ -116,7 +135,7 @@ def handle_client(conn: socket, addr, data_service: DataService, master_server):
     response = None
     match operation:
         case 'create_file':
-            response = data_service.create_file(file_path, master_server)
+            response = data_service.create_file(file_path, master_server, addr)
         case 'get_metadata':
             response = data_service.get_metadata(file_path)
         case 'update_metadata':

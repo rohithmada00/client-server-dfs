@@ -323,6 +323,7 @@ def main():
         file_name = client_message.get('file_name', '')
         operation = client_message.get('operation', '')
         message = client_message.get('message', '')
+        content = client_message.get('content', '')
         lease_duration = client_message.get('lease_duration', 120)
 
         print(f'file name {file_name}, operation {operation}, message {message}')
@@ -333,7 +334,7 @@ def main():
             case 'w':
                 response = write_file_locally(file_name, conn, lease_manager) if file_name in data_server.primaries else write_file_globally(file_name, message, lease_duration, conn)
             case 'rep':
-                response = replicate(file_name, message)
+                response = save(file_name, content)
             case 'lease':
                 response = lease_manager.request_lease(file_name, addr[0] + str(addr[1]), conn, lease_duration)
             case _:

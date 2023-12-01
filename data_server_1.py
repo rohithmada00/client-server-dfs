@@ -249,7 +249,7 @@ def write_file_globally(file_name, message, lease_duration, conn :socket):
                 # TODO: replicate
                 print(f'primary is {primary_server}')
                 print(f'replicas are {replicas}')
-                # replicate(file_name, replicas)
+                response = replicate(file_name, [primary_server]+replicas)
                 status = response.get('status', 'error')
                 message = response.get('message')
                 if(status != 'success'):
@@ -289,7 +289,7 @@ def write_file_globally(file_name, message, lease_duration, conn :socket):
 #         return ('FAILURE', f'Error fetching {file_name} from the data server: {e}')
 
 def replicate(file_name, replicas):
-    file = open(f'files/{file_name}', 'r')
+    file = open(f'{PATH}/{file_name}', 'r')
     content = file.read()
     file.close()
 
@@ -297,12 +297,21 @@ def replicate(file_name, replicas):
 
     for replica in replicas:
         server_socket = contact_data_server(port=int(replica))
-        server_socket.send(json.dumps(response).encode())
+        server_socket.send(json.dumps(message).encode())
         response = server_socket.recv(1024).decode()
         response = json.loads(response)
+        status = response.get('status')
         message = response.get('message')
         print(f'response from {replica}')
         print(message)
+
+        # in pessimistic replication every replica should be consistant
+        # failure in doing so leads to failed operation
+        if status != 'success':
+            return response
+    
+    return {'status': 'success', 'message': 'file replicated successfully..'}
+    
         
 def save(file_name,  content):
     with open(f'{PATH}{file_name}', 'w') as file:

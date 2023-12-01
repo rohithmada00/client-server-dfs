@@ -182,8 +182,17 @@ def write_file_locally(file_name, conn: socket, lease_manager: LeaseManager):
         with open(f'{PATH}{file_name}', 'w') as file:
             file.write(content)
 
-        # TODO: Replicate
-        # replicate(file_name, replicas)
+        server_socket = contact_name_server()
+        message = {'operation': 'get_metadata', 'file_path': file_name}
+        message = json.dumps(message).encode()
+        server_socket.send(message)
+        response = server_socket.recv(1024).decode()
+        response = json.loads(response)
+        data = response.get('content')
+        replicas = data['replicas']
+        server_socket.close()
+
+        replicate(file_name, replicas)
         return { 'status': 'success', 'message': f'successfully written to file'}
     except Exception as e:
         return { 'status': 'error', 'message': f'exception writing to file{e}'}
@@ -198,14 +207,18 @@ def write_file_globally(file_name, message, lease_duration, conn :socket):
         response = server_socket.recv(1024).decode()
         response = json.loads(response)
         data = response.get('content')
+
+        if data is None:
+            print(f'File {file_name} does not exist in the file system')
+            return {'status' : 'error', 'message' : 'File does not exist in the system...'}
+        
         primary_server = data['primary_server']
         replicas = data['replicas']
         server_socket.close()
 
-        if primary_server is None:
+        if primary_server is  None:
             print(f'File {file_name} does not exist in the file system')
             return {'status' : 'error', 'message' : 'File does not exist in the system...'}
-
         else:
             # TODO: contact primary to request lease
             print('trying to lease...')
@@ -263,30 +276,45 @@ def write_file_globally(file_name, message, lease_duration, conn :socket):
         print(f'Error writing {file_name}: {e}')
         return {'status' : 'error', 'message' : f'Error writing {file_name} to the data server: {e}'}
     
-# def create_file(file_name):
-#     try:
-#         # get info about primary
-#         message = {'operation': 'get_metadata', 'file_path': file_name}
-#         message = json.dumps(message).encode()
-#         response = message_to_server('localhost', 12345, message)
-#         primary_server = response.get('primary_server')
+def create_file(file_name, conn: socket):
+    try:
+        # get info about primary
+        server_socket = contact_name_server()
+        message = {'operation': 'get_metadata', 'file_path': file_name}
+        message = json.dumps(message).encode()
+        server_socket.send(message)
+        response = server_socket.recv(1024).decode()
+        response = json.loads(response)
+        data = response.get('content')
+        server_socket.close()
+        print('1')
 
-#         if primary_server is None:
-#             print(f'File {file_name} does not exist in the file system')
-#             return ('FAILURE', 'File does not exist in the system...')
+        if data is not None:
+            print(f'File {file_name} already exists in the file system')
+            print('2')
+            return  {'status' : 'error', 'message' : f'{file_name} already exists in file system: {e}'}
 
-#         else:
-#             # contact primary
-#             message = {'file_name': file_name, 'operation': 'r'}
-#             message = json.dumps(message).encode()
-#             response = message_to_server('localhost', primary_server, message)
+        else:
+            # this server will be the files primary
+            message = {'status' : 'success', 'message' : f'{file_name} can be created.. please enter the content'}
+            print(message)
+            message = json.dumps(message).encode()
+            conn.send(message)
+            # take input 
+            print('3')
+            response = conn.recv(1024).decode()
+            response = json.loads(response)
+            content = response.get('content')
+            # save locally
+            with open(f'{PATH}{file_name}', 'w') as file:
+                    file.write(content)
+                    file.close()
 
-#             print('File read successful')
-#             return response['message']  # Return content from the response
+            return {'status': 'success', 'message': 'File created successfully..'}
 
-#     except Exception as e:
-#         print(f'Error fetching {file_name}: {e}')
-#         return ('FAILURE', f'Error fetching {file_name} from the data server: {e}')
+    except Exception as e:
+        print(f'Error creating {file_name}: {e}')
+        return {'status' : 'error', 'message' : f'Error creating {file_name} to the data server: {e}'}
 
 def replicate(file_name, replicas):
     file = open(f'{PATH}/{file_name}', 'r')
@@ -346,6 +374,8 @@ def main():
                 response = read_file_locally(file_name) if file_name in data_server.primaries else read_file_globally(file_name)
             case 'w':
                 response = write_file_locally(file_name, conn, lease_manager) if file_name in data_server.primaries else write_file_globally(file_name, message, lease_duration, conn)
+            case 'c':
+                response = create_file(file_name, conn)
             case 'rep':
                 response = replicate(file_name, message)
             case 'lease':

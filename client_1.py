@@ -93,11 +93,47 @@ def write_file(file_name):
     client_socket.close()
     return True if status == 'success' else False
 
-def list_files():
-    # TODO: Implement this
-    print("Listing all existing files...")
+def create_file(file_name):
+    client_socket = contact_random_server()
+    
+    # ask for write
+    message = {
+        'file_name': file_name,
+        'operation': 'c',
+    }
+    data = json.dumps(message).encode()
+    client_socket.send(data)
+    
+    response = client_socket.recv(1024).decode()
+    print('oicnois')
+    print(response)
+    response = json.loads(response)
+    status = response.get('status', 'error')
+    message = response.get('message')
+    print(message)
+    if status == 'error':
+        return False
+    
+    content = input('Please enter the content to write: ')
+    message = {
+        'content': content
+    }
+    data = json.dumps(message).encode()
+    client_socket.send(data)
+
+    response = client_socket.recv(1024).decode()
+    response = json.loads(response)
+    status = response.get('status', 'error')
+    message = response.get('message')
+    print(message)
+
+    return True if status == 'success' else False
 
 def delete_file():
+    # TODO: Implement this
+    print("Deleting a file...")
+
+def seek_file():
     # TODO: Implement this
     print("Deleting a file...")
 
@@ -131,10 +167,16 @@ if __name__ == "__main__":
                 response = read_file(file_name)
                 print("Exiting <read> mode...\n")
 
+            elif "<create>" in _input:
+                while not check_valid_input(_input):
+                    _input = input('Invalid input; please try using a valid name')
+
+                file_name = _input.split()[1]
+                response = create_file(file_name)
+                print("Exiting <read> mode...\n")
+
             else:
                 match _input:
-                    case '<list>':
-                        list_files()
                     case '<instructions>':
                         instructions()
                     case '<quit>':

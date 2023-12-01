@@ -1,120 +1,188 @@
-import socket
-import time
+from socket import *
+import json
+import random
 
-HOST = "127.0.0.1" 
-PORT = 12347
+HOST = "127.0.0.1"
+PORTS = ['11236']
 
 def instructions():
     # instructions to the user
-    print ("------------------- INSTRUCTIONS ----------------------")
-    print ("<write> [filename] - write to file mode")
-    print ("<read> [filename] - read from file mode")
-    print ("<list> - lists all existing files")
-    print ("<instructions> - lets you see the instructions again")
-    print ("<quit> - exits the application")
-    print ("-------------------------------------------------------\n")
+    print("------------------- INSTRUCTIONS ----------------------")
+    print("<write> [filename] - write to file mode")
+    print("<read> [filename] - read from file mode")
+    print("<list> - lists all existing files")
+    print("<instructions> - lets you see the instructions again")
+    print("<quit> - exits the application")
+    print("-------------------------------------------------------\n")
 
-def read_file(file_name, client_socket):
-    message = file_name + '|' + 'r' + '|' + ''
-    print(f'encoded text - {message.encode()}')
-    client_socket.send(message.encode())
-    response = client_socket.recv(1024).decode()
-    return response
+def read_file(file_name):
+    client_socket = contact_random_server()
     
-
-def write_file(file_name, client_socket):
-
-    # locking the file
-    grant_lock = lock_unlock_file('client 2', file_name, "lock")
-
-    while grant_lock != "file granted":
-            print("File not granted, polling again...")
-            grant_lock = lock_unlock_file('client2', file_name, "lock")
-
-            if grant_lock == "TIMEOUT":     
-                return False
-
-            time.sleep(0.1)     
-
-    print("You are granted the file...")
-
-    # writing part
-    content = input('Please enter the content to write: ')
-    message = file_name + '|' + 'w' + '|' + content
-    client_socket.send(message.encode())
+    # ask for read
+    message = {
+        'file_name': file_name,
+        'operation': 'r',
+    }
+    data = json.dumps(message).encode()
+    client_socket.send(data)
+    
     response = client_socket.recv(1024).decode()
-    print(f'response after writing to fs {response}')
+    response = json.loads(response)
+    print(f'Received response from server...')
+    status = response.get('status', 'error')
 
-    # unlocking part
-    reply_unlock = lock_unlock_file('client2', file_name, "unlock")
-    print(reply_unlock)
+    if status == 'success':
+        content = response.get('content', '###')
+        print(f'File content:\n{content}')
 
-    return True
+    client_socket.close()
 
-def lock_unlock_file( client_id, filename, lock_or_unlock):
-    serverName = 'localhost'
-    serverPort = 12367   # port of directory service
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect((serverName,serverPort))
+def contact_random_server():
+    port = random.choice(PORTS)
+    print(f'Connecting to random server on port {port}...')
+    client_socket = socket(AF_INET, SOCK_STREAM)
+    client_socket.connect((HOST, int(port)))
+    return client_socket
 
-        if lock_or_unlock == "lock":
-            msg = client_id + '|' + 'LOCK' + '|' + filename  # 1 = lock the file
-        elif lock_or_unlock == "unlock":
-            msg = client_id + '|' + 'UNLOCK' + '|' + filename   # 2 = unlock the file
+def write_file(file_name):
+    client_socket = contact_random_server()
+    
+    # ask for write
+    message = {
+        'file_name': file_name,
+        'operation': 'w',
+    }
+    data = json.dumps(message).encode()
+    client_socket.send(data)
+    
+    response = client_socket.recv(1024).decode()
+    response = json.loads(response)
+    status = response.get('status', 'error')
+    message = response.get('message')
 
-        # send the string requesting file info to directory service
-        print(f'encoded message is {msg}')
-        s.send(msg.encode())
-        reply = s.recv(1024)
-        reply = reply.decode()
-        s.close()
+    # if pending wait for another message
+    if status == 'pending':
+        print(f'Received response from server...')
+        print(message)
+        
+        # Receive another message
+        response = client_socket.recv(1024).decode()
+        response = json.loads(response)
+        status = response.get('status', 'error')
+        message = response.get('message')
 
-    return reply
+    # if success take input and send
+    if status == 'success':
+        print(f'Received response from server...')
+        print(message)
+        
+        print('Sending file contents to server...')
+        content = input('Please enter the content to write: ')
 
-def list_files():
-    raise NotImplementedError
+        message = {
+            'content': content
+        }
+        data = json.dumps(message).encode()
+        client_socket.send(data)
+
+        response = client_socket.recv(1024).decode()
+        response = json.loads(response)
+
+    print(f'Received response from server...')
+    print(response)
+    client_socket.close()
+    return True if status == 'success' else False
+
+def create_file(file_name):
+    client_socket = contact_random_server()
+    
+    # ask for write
+    message = {
+        'file_name': file_name,
+        'operation': 'c',
+    }
+    data = json.dumps(message).encode()
+    client_socket.send(data)
+    
+    response = client_socket.recv(1024).decode()
+    print('oicnois')
+    print(response)
+    response = json.loads(response)
+    status = response.get('status', 'error')
+    message = response.get('message')
+    print(message)
+    if status == 'error':
+        return False
+    
+    content = input('Please enter the content to write: ')
+    message = {
+        'content': content
+    }
+    data = json.dumps(message).encode()
+    client_socket.send(data)
+
+    response = client_socket.recv(1024).decode()
+    response = json.loads(response)
+    status = response.get('status', 'error')
+    message = response.get('message')
+    print(message)
+
+    return True if status == 'success' else False
 
 def delete_file():
-    raise NotImplementedError
+    # TODO: Implement this
+    print("Deleting a file...")
+
+def seek_file():
+    # TODO: Implement this
+    print("Deleting a file...")
 
 def check_valid_input(file_name):
     return '.txt' in file_name
-    
 
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-    s.connect((HOST, PORT))
-    while(True):
-        instructions()
-        _input = input()
-        print('1')
-        if "<write>" in _input:
-            while not check_valid_input(_input):    
-                 _input = input('Invalid input ; please try using a valid name')
-            
-            file_name = _input.split()[1]     
-            response = write_file(file_name, s)  
+if __name__ == "__main__":
+    try:
+        while True:
+            instructions()
+            _input = input()
+            if "<write>" in _input:
+                while not check_valid_input(_input):
+                    _input = input('Invalid input; please try using a valid name')
 
-            print(f'write response {response}')
-            print ("Exiting <write> mode...\n")
-            
-        elif "<read>" in _input:
-            print('2')
-            while not check_valid_input(_input):   
-                 _input = input('Invalid input ; please try using a valid name')
-            print('3')
-            file_name = _input.split()[1]  
-            response = read_file(file_name, s) 
-            print('4')
-            print(f'read response {response}')
-            print("Exiting <read> mode...\n")
+                file_name = _input.split()[1]
+                response = write_file(file_name)
 
-        else:
-            match _input:
-                case '<list>':
-                    list_files()
-                case '<instructions>':
-                    instructions()
-                case '<exit>':
-                    break
-                case _:
-                    print('Invalid query.Please try again !!')
+                if response:
+                    print("File written successfully!")
+                else:
+                    print("Failed to write file.")
+
+                print("Exiting <write> mode...\n")
+
+            elif "<read>" in _input:
+                while not check_valid_input(_input):
+                    _input = input('Invalid input; please try using a valid name')
+
+                file_name = _input.split()[1]
+                response = read_file(file_name)
+                print("Exiting <read> mode...\n")
+
+            elif "<create>" in _input:
+                while not check_valid_input(_input):
+                    _input = input('Invalid input; please try using a valid name')
+
+                file_name = _input.split()[1]
+                response = create_file(file_name)
+                print("Exiting <read> mode...\n")
+
+            else:
+                match _input:
+                    case '<instructions>':
+                        instructions()
+                    case '<quit>':
+                        print("Exiting the application...")
+                        exit(0)
+                    case _:
+                        print('Invalid query. Please try again !!')
+    except KeyboardInterrupt:
+        print("\nExiting the application...")

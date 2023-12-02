@@ -330,6 +330,7 @@ def create_file(file_name, conn: socket):
         ns_conn.send(message)
         response = ns_conn.recv(1024).decode()
         response = json.loads(response)
+        print(f'response from nameserver: {response}')
         status = response.get('status', 'error')
         data = response.get('content')
         replicas = response.get('replicas')
@@ -350,8 +351,8 @@ def create_file(file_name, conn: socket):
             with open(f'{PATH}{file_name}', 'w') as file:
                     file.write(content)
                     file.close()
-            response = replicate(file_name, replicas)
-            print(response)
+            # response = replicate(file_name, replicas)
+            # print(response)
 
             return {'status': 'success', 'message': 'File created successfully..'}
 
@@ -371,6 +372,9 @@ def replicate(file_name, replicas):
     message = {'file_name': file_name, 'operation': 'rep', 'content': content}
 
     for replica in replicas:
+        # Donot replicate to itself
+        if replica == PORT:
+            continue
         try:
             server_socket = contact_data_server(port=int(replica))
             server_socket.send(json.dumps(message).encode())

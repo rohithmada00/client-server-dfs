@@ -6,7 +6,7 @@ import time
 
 class MasterServer:
     def __init__(self):
-        self.available_servers = ['11234', '11235', '11236', ]
+        self.available_servers = ['11234', '11235', '11236',]
         self.server_check_interval = 60
         # self.server_check_thread = threading.Thread(target=self.periodic_server_check)
         # self.server_check_thread.daemon = True
@@ -26,6 +26,13 @@ class MasterServer:
                 print(f"Connected to server at {host}:{port}")
         except Exception as e:
             print(f"Error connecting to server at {host}:{port}: {e}")
+
+    def select_servers(self):
+        # Round robin for server selection
+        selected_primary = self.available_servers.pop(0)
+        selected_replicas = self.available_servers[:2]
+        self.available_servers.append(selected_primary)  
+        return selected_primary, selected_replicas
 
            
 def start_server_listener(data_service, master_server, port):
@@ -88,13 +95,13 @@ class DataService:
     def create_file(self, file_path, master_server: MasterServer, conn=None):
         try:
             metadata = self.get_metadata(file_path)
+            print(f'metadata of file {file_path} : {metadata}')
+            content = metadata.get('content')
 
-            if metadata is None:
+            if content is None:
                 # File doesn't exist, proceed to create
-                if conn is not None:
-                    primary_server = str(conn[1])
-                else:
-                    primary_server, replicas = master_server.select_servers()
+                primary_server, replicas = master_server.select_servers()
+                primary_server = str(conn[1])
 
                 # Add metadata to the database
                 self.update_metadata(file_path, primary_server, replicas, '0')

@@ -101,8 +101,7 @@ class DataService:
 
             if content is None:
                 # File doesn't exist, proceed to create
-                primary_server, replicas = master_server.select_servers()
-                primary_server = str(conn[1])
+                primary_server, replicas = master_server.select_servers(conn[1])
 
                 # Add metadata to the database
                 self.update_metadata(file_path, primary_server, replicas, '0')
@@ -110,7 +109,7 @@ class DataService:
                 return {
                     'status': 'success',
                     'message': 'File created successfully',
-                    'file_info': {
+                    'content': {
                         'file_path': file_path,
                         'primary_server': primary_server,
                         'replicas': replicas,

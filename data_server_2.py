@@ -333,7 +333,7 @@ def create_file(file_name, conn: socket):
         print(f'response from nameserver: {response}')
         status = response.get('status', 'error')
         data = response.get('content')
-        replicas = response.get('replicas')
+        replicas = data.get('replicas')
         ns_conn.close()
 
         if status == 'success':
@@ -351,6 +351,7 @@ def create_file(file_name, conn: socket):
             with open(f'{PATH}{file_name}', 'w') as file:
                     file.write(content)
                     file.close()
+            print(f'starting replication - {replicas}')
             response = replicate(file_name, replicas)
             print(response)
 
@@ -381,7 +382,7 @@ def replicate(file_name, replicas):
             response = server_socket.recv(1024).decode()
             response = json.loads(response)
             status = response.get('status')
-            message = response.get('message')
+            server_socket.close()
             print(f'response from {replica}')
             print(message)
 
@@ -441,6 +442,7 @@ def main():
                 print('Invalid operation. Please try again !!')
 
         conn.send(json.dumps(response).encode())
+        conn.close()
 
 if __name__ == '__main__':
     main()

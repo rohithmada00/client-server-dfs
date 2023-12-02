@@ -93,7 +93,7 @@ class DataService:
             print(f"Error updating metadata: {e}")
             return {'status': 'error', 'message': str(e)}
 
-    def create_file(self, file_path, master_server: MasterServer, conn=None):
+    def create_file(self, file_path, master_server: MasterServer, primary):
         try:
             metadata = self.get_metadata(file_path)
             print(f'metadata of file {file_path} : {metadata}')
@@ -101,7 +101,7 @@ class DataService:
 
             if content is None:
                 # File doesn't exist, proceed to create
-                primary_server, replicas = master_server.select_servers(conn[1])
+                primary_server, replicas = master_server.select_servers(primary)
 
                 # Add metadata to the database
                 self.update_metadata(file_path, primary_server, replicas, '0')
@@ -142,7 +142,8 @@ def handle_client(conn: socket, addr, data_service: DataService, master_server):
     response = None
     match operation:
         case 'create_file':
-            response = data_service.create_file(file_path, master_server, addr)
+            primary = content.get('primary', 'NA')
+            response = data_service.create_file(file_path, master_server, primary)
         case 'get_metadata':
             response = data_service.get_metadata(file_path)
         case 'update_metadata':

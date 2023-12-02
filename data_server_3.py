@@ -324,7 +324,10 @@ def create_file(file_name, conn: socket):
         ns_conn = contact_name_server()
         message = {
             "file_path": file_name,
-            'operation': 'create_file'
+            'operation': 'create_file',
+            'content' : {
+                'primary': str(PORT)
+            }
         }
         message = json.dumps(message).encode()
         ns_conn.send(message)

@@ -351,8 +351,8 @@ def create_file(file_name, conn: socket):
             with open(f'{PATH}{file_name}', 'w') as file:
                     file.write(content)
                     file.close()
-            # response = replicate(file_name, replicas)
-            # print(response)
+            response = replicate(file_name, replicas)
+            print(response)
 
             return {'status': 'success', 'message': 'File created successfully..'}
 

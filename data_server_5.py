@@ -19,7 +19,7 @@ class DataServer:
                 self.primaries = json.load(file)
         except FileNotFoundError:
             # If the file doesn't exist, initialize with a default value
-            self.primaries = ['doodle.txt']
+            self.primaries = ['sks.txt']
 
     def save_primaries(self):
         with open(self.FILE_PATH, 'w') as file:
@@ -54,7 +54,7 @@ class LeaseManager:
             return {'status': 'success', 'message': f'Lease granted for {lease_duration} seconds'}
 
         self.lease_queue[file_path].append((client_id, conn))
-        message =  {'status': 'pending', 'message': f'Lease granted for {lease_duration} seconds'}
+        message =  {'status': 'pending', 'message': f'Lease pending...'}
 
         if(conn is not None):
             conn.send(json.dumps(message).encode())
@@ -114,7 +114,6 @@ class LeaseManager:
 
 def start_server():
     HOST = 'localhost'
-    PORT = 11234  
     server_socket = socket(AF_INET,SOCK_STREAM)
     server_socket.bind((HOST, PORT))
     server_socket.listen(10)
@@ -215,7 +214,7 @@ def write_file_locally(file_name, conn: socket, lease_manager: LeaseManager):
     except Exception as e:
         return { 'status': 'error', 'message': f'exception writing to file{e}'}
 
-def write_file_globally(file_name, message, lease_duration, conn :socket):
+def write_file_globally(file_name, lease_duration, conn :socket):
     try:
         # get info about primary
         server_socket = contact_name_server()
@@ -259,7 +258,8 @@ def write_file_globally(file_name, message, lease_duration, conn :socket):
                 conn.send(encoded_response)
                 
                 # Receive another message
-                response = server_socket.recv(1024).decode()
+                encoded_response = server_socket.recv(1024)
+                response = encoded_response.decode()
                 response = json.loads(response)
                 status = response.get('status', 'error')
                 message = response.get('message')
@@ -300,6 +300,7 @@ def write_file_globally(file_name, message, lease_duration, conn :socket):
                 }
                 message = json.dumps(message).encode()
                 ns_conn.send(message)
+                print(f'message sent to name server {message}')
                 response = ns_conn.recv(1024).decode()
                 response = json.loads(response)
                 status = response.get('status')
@@ -329,6 +330,7 @@ def create_file(file_name, conn: socket):
         ns_conn.send(message)
         response = ns_conn.recv(1024).decode()
         response = json.loads(response)
+        print(f'response from nameserver: {response}')
         status = response.get('status', 'error')
         data = response.get('content')
         replicas = response.get('replicas')
@@ -370,6 +372,9 @@ def replicate(file_name, replicas):
     message = {'file_name': file_name, 'operation': 'rep', 'content': content}
 
     for replica in replicas:
+        # Donot replicate to itself
+        if replica == PORT:
+            continue
         try:
             server_socket = contact_data_server(port=int(replica))
             server_socket.send(json.dumps(message).encode())
@@ -413,24 +418,25 @@ def main():
 
         file_name = client_message.get('file_name', '')
         operation = client_message.get('operation', '')
-        message = client_message.get('message', '')
+        content = client_message.get('content', '')
         lease_duration = client_message.get('lease_duration', 120)
 
-        print(f'file name {file_name}, operation {operation}, message {message}')
+        print(f'file name {file_name}, operation {operation}, content {content}')
 
         match operation:
             case 'r':
                 response = read_file_locally(file_name) if file_name in data_server.primaries else read_file_globally(file_name)
             case 'w':
-                response = write_file_locally(file_name, conn, lease_manager) if file_name in data_server.primaries else write_file_globally(file_name, message, lease_duration, conn)
+                response = write_file_locally(file_name, conn, lease_manager) if file_name in data_server.primaries else write_file_globally(file_name, lease_duration, conn)
             case 'c':
                 response = create_file(file_name, conn)
                 if(response['status'] == 'success'):
                     data_server.add_primary(file_name)
             case 'rep':
-                response = replicate(file_name, message)
+                response = save(file_name, content)
             case 'lease':
-                response = lease_manager.request_lease(file_name, addr[0] + str(addr[1]), conn, lease_duration)
+                print(f'Lease requested by {addr[0] + str(addr[1])}')
+                response = lease_manager.request_lease(file_name,str(addr[1]), conn, lease_duration)
             case _:
                 print('Invalid operation. Please try again !!')
 

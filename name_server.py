@@ -3,6 +3,7 @@ from socket import *
 import sqlite3
 import threading
 import time
+import random
 
 class MasterServer:
     def __init__(self):
@@ -27,11 +28,11 @@ class MasterServer:
         except Exception as e:
             print(f"Error connecting to server at {host}:{port}: {e}")
 
-    def select_servers(self):
-        # Round robin for server selection
-        selected_primary = self.available_servers.pop(0)
-        selected_replicas = self.available_servers[:2]
-        self.available_servers.append(selected_primary)  
+    def select_servers(self, requesting_server):
+        # Random servers for replicas
+        selected_primary = requesting_server
+        available_replicas = [server for server in self.available_servers if server != requesting_server]
+        selected_replicas = random.sample(available_replicas, 2) 
         return selected_primary, selected_replicas
 
            

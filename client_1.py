@@ -169,16 +169,45 @@ def delete_file(file_name):
     response = json.loads(response)
     print(f'Received response from server...')
     status = response.get('status', 'error')
+    client_socket.close()
 
     if status == 'success':
         content = response.get('content', '###')
         print(f'File content:\n{content}')
+        return True
 
+    return False
+
+def seek_file(file_name, seek_index):
+    client_socket = contact_random_server()
+    if client_socket is None:
+        print('Unable to connect to any server to operate...')
+        return False
+    
+    # ask for seek
+    message = {
+        'file_name': file_name,
+        'operation': 'seek_files',
+        'content' :{
+            'seek_index' : seek_index
+        }
+    }
+    data = json.dumps(message).encode()
+    client_socket.send(data)
+    
+    response = client_socket.recv(1024).decode()
+    response = json.loads(response)
+    print(f'Received response from server...')
+    status = response.get('status', 'error')
     client_socket.close()
 
-def seek_file():
-    # TODO: Implement this
-    print("Deleting a file...")
+    if status == 'success':
+        content = response.get('content', '###')
+        print(f'File content:\n{content}')
+        return True
+
+    return False
+
 
 def fail_server():
     client_socket = contact_random_server()
@@ -193,6 +222,34 @@ def fail_server():
     message = response.get('message')
     print(message)
     return True
+
+def list_files():
+    print('1')
+    client_socket = contact_random_server()
+    if client_socket is None:
+        print('Unable to connect to any server to operate...')
+        return False
+    print('2')
+    # ask for read
+    message = {
+        'operation': 'list_files',
+    }
+    data = json.dumps(message).encode()
+    client_socket.send(data)
+    print('3')
+    response = client_socket.recv(1024).decode()
+    response = json.loads(response)
+    print(f'Received response from server...')
+    status = response.get('status', 'error')
+
+    if status == 'success':
+        content = response.get('content', {})
+        files_list = content.get('files_list', [])
+        print(f'Files list:\n{files_list}')
+
+    client_socket.close()
+
+
 
 def check_valid_input(file_name):
     return '.txt' in file_name
@@ -223,6 +280,33 @@ if __name__ == "__main__":
                 file_name = _input.split()[1]
                 response = read_file(file_name)
                 print("Exiting <read> mode...\n")
+            
+            if "<seek>" in _input:
+                while not check_valid_input(_input):
+                    _input = input('Invalid input; please try using a valid name')
+
+                file_name = _input.split()[1]
+                seek_index = _input.split()[2]
+
+                try:
+                    seek_index = int(seek_index)
+                except ValueError:
+                    print("Please enter an integer index for seeking the file.")
+                    print("Exiting <write> mode...\n")
+                    continue
+                response = seek_file(file_name, seek_index)
+                if response:
+                    print("File seek successful!")
+                else:
+                    print("Failed to seek file.")
+            
+            elif "<list>" in _input:
+                response = list_files()
+                if response:
+                    print("Files listed successfully!")
+                else:
+                    print("Failed to list files.")
+                print("Exiting <list> mode...\n")
 
             elif "<create>" in _input:
                 while not check_valid_input(_input):

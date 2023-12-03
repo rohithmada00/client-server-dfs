@@ -175,6 +175,20 @@ class DataService:
         except Exception as e:
             print(f"Error updating primaries: {e}")
             return {'status': 'error', 'message': "Error updating primaries: {e}"}
+        
+    def list_files(self):
+        try:
+            conn = sqlite3.connect('dfs.db')
+            cursor = conn.cursor()
+            cursor.execute("SELECT file_path FROM metadata")
+            results = cursor.fetchall()
+            conn.close()
+
+            file_paths = [result[0] for result in results]  
+            return {'status': 'success', 'message': 'List of file paths retrieved', 'content': {'files_list': file_paths}}
+        except Exception as e:
+            print(f"Error listing files: {e}")
+            return {'status': 'error', 'message': str(e)}
 
 def contact_data_server(port, host = 'localhost'):
     print(f'Connecting to data server...')
@@ -213,6 +227,8 @@ def handle_client(conn: socket, addr, data_service: DataService, master_server):
         case 'update_primaries':
             files = content.get('files', [])
             response = data_service.update_primaries(files)
+        case 'list_files':
+            response = data_service.list_files()
         case _:
             print('Invalid operation. Please try again !!')
             response = {'status': 'error', 'message': 'Invalid operation'}

@@ -232,6 +232,68 @@ def read_file_globally(file_name):
         return {'status' : 'error', 'message' : f'Error fetching {file_name} from the data server: {e}'}
   
 
+def seek_file_locally(file_name, seek_index):
+    try:
+        with open(f'{PATH}{file_name}', 'r') as file:
+            file.seek(seek_index)
+            content = file.read()
+            print('file read')
+            response = {
+                'status' : 'success',
+                'content' : content
+            }
+            return response
+    except IOError:
+        print(f'{file_name} does not exist')
+        return {'status' : 'error', 'message' : 'File does not exist in the system...'}
+
+def seek_file_globally(file_name, seek_index):
+    try:
+        server_socket = contact_name_server()
+        # get info about primary
+        message = {'operation': 'get_metadata', 'file_path': file_name}
+        message = json.dumps(message).encode()
+        server_socket.send(message)
+        response = server_socket.recv(1024).decode()
+        response = json.loads(response)
+        data = response.get('content')
+        server_socket.close()
+
+        if data is None:
+            print(f'File {file_name} does not exist in the file system')
+            return {'status' : 'error', 'message' : 'File does not exist in the system...'}
+
+        else:
+            # contact primary
+            primary_server = data['primary_server']
+            server_socket = contact_data_server(int(primary_server))
+            message = {'file_name': file_name, 'operation': 'r'}
+            message = json.dumps(message).encode()
+            server_socket.send(message)
+            response = server_socket.recv(1024).decode()
+            response = json.loads(response)
+            content = response.get('content')
+            print('File read successfully')
+            # make a local copy
+            with open(f'{PATH}{file_name}', 'w') as file:
+                file.write(content)
+            # return local copy
+            return seek_file_locally(file_name, seek_index)
+    except Exception as e:
+        print(f'Error fetching {file_name}: {e}')
+        return {'status' : 'error', 'message' : f'Error fetching {file_name} from the data server: {e}'}
+
+def list_files():
+    # get info about primary
+    server_socket = contact_name_server()
+    message = {'operation': 'list_files'}
+    message = json.dumps(message).encode()
+    server_socket.send(message)
+    response = server_socket.recv(1024).decode()
+    response = json.loads(response)
+    return response
+
+
 def write_file_locally(file_name, conn: socket, lease_manager: LeaseManager):
     try:
         response = lease_manager.request_lease(file_name, 'current', None, 120)
@@ -572,6 +634,11 @@ def main():
                 print(f'global deletion response {response}')
                 if response['status'] == 'success':
                     data_server.remove_primary(file_name)
+            case 'list_files':
+                response = list_files()
+            case 'seek_files':
+                seek_index = content['seek_index']
+                response = seek_file_locally(file_name, seek_index) if file_name in data_server.primaries else seek_file_globally(file_name, seek_index)
             case _:
                 print('Invalid operation. Please try again !!')
 

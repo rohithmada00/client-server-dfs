@@ -139,7 +139,7 @@ def contact_name_server():
     client_socket.connect(('localhost', 12345))
     return client_socket
 
-def fail_server(data_server: DataServer, lease_manager: LeaseManager):
+def fail_server(data_server: DataServer, lease_manager: LeaseManager, conn: socket):
     print('server is about to fail')
     # TODO: fail all lease grantings/ pendings
     lease_manager.free_leases()
@@ -161,6 +161,8 @@ def fail_server(data_server: DataServer, lease_manager: LeaseManager):
     print(f'updating primaries result is {response}')
     ns_conn.close()
 
+    response = {'status': 'success', 'message': 'Added to primaries successfully...'}
+    conn.send(json.dumps(response).encode())
     print('exit application..')
     exit(0)
 
@@ -484,8 +486,7 @@ def main():
                 response = data_server.add_primary(file_name)
                 response = {'status': 'success', 'message': 'Added to primaries successfully...'}
             case 'fail_server':
-                fail_server(data_server, lease_manager)
-                response = {'status': 'success', 'message': 'Added to primaries successfully...'}
+                fail_server(data_server, lease_manager, conn)
             case _:
                 print('Invalid operation. Please try again !!')
 

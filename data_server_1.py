@@ -19,7 +19,7 @@ class DataServer:
                 self.primaries = json.load(file)
         except FileNotFoundError:
             # If the file doesn't exist, initialize with a default value
-            self.primaries = ['doodle.txt']
+            self.primaries = []
 
     def save_primaries(self):
         with open(self.FILE_PATH, 'w') as file:

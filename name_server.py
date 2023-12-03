@@ -127,8 +127,12 @@ class DataService:
     def update_primaries(self, files:list):
         try:
             for file in files:
+                print(f'update primary for {file}')
                 metadata = self.get_metadata(file)
-                replicas = metadata[replicas]
+                file_info = metadata.get('content')
+                print(f'metadata: {file_info}')
+                replicas = file_info['replicas']
+                print(f'replicas {replicas}')
                 conn = None
                 new_primary = None
                 for replica in replicas:
@@ -150,8 +154,8 @@ class DataService:
                 response = json.loads(conn.recv(1024).decode())
                 print(f'Update primary response for {file} : {response}')
                 # update database
-                self.update_metadata(metadata['file_path'], primary_server= str(new_primary), replicas= [ replica for r in replicas if r != new_primary], latest_commit_id= metadata['latest_commit_id'])
-                print(f'updated data : {metadata["file_path"]}, {str(new_primary)}, {[ replica for r in replicas if r != new_primary]}, { metadata["latest_commit_id"]}')
+                self.update_metadata(file_info['file_path'], primary_server= str(new_primary), replicas= [ replica for r in replicas if r != new_primary], latest_commit_id= file_info['latest_commit_id'])
+                print(f'updated data : {file_info["file_path"]}, {str(new_primary)}, {[ replica for r in replicas if r != new_primary]}, { file_info["latest_commit_id"]}')
             return {'status': 'success', 'message': 'Updated all primaries...'}
         except Exception as e:
             print(f"Error updating primaries: {e}")
@@ -220,7 +224,6 @@ def main():
     
     master_server = MasterServer()
     data_service = DataService()
-    data_service.update_metadata('sks.txt', '11235',[], None)
 
     start_server_listener(data_service, master_server, '12345')
 

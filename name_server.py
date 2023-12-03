@@ -123,7 +123,45 @@ class DataService:
         except Exception as e:
             print(f"Error creating file: {e}")
             return {'status': 'error', 'message': str(e)}
+        
+    def update_primaries(self, files:list):
+        try:
+            for file in files:
+                metadata = self.get_metadata(file)
+                replicas = metadata[replicas]
+                conn = None
+                new_primary = None
+                for replica in replicas:
+                    try:
+                        conn = contact_data_server(replica)
+                        if conn is not None:
+                            new_primary = replica
+                            break
+                    except: 
+                        print(f'Exception contacting {replica}')
+                        continue
 
+                # connect to server 
+                request = {
+                    'file_name': file,
+                    'operation': 'add_primary'
+                }
+                conn.send(json.dumps(request).encode())
+                response = json.loads(conn.recv(1024).decode())
+                print(f'Update primary response for {file} : {response}')
+                # update database
+                self.update_metadata(metadata['file_path'], primary_server= str(new_primary), replicas= [ replica for r in replicas if r != new_primary], latest_commit_id= metadata['latest_commit_id'])
+                print(f'updated data : {metadata["file_path"]}, {str(new_primary)}, {[ replica for r in replicas if r != new_primary]}, { metadata["latest_commit_id"]}')
+            return {'status': 'success', 'message': 'Updated all primaries...'}
+        except Exception as e:
+            print(f"Error updating primaries: {e}")
+            return {'status': 'error', 'message': "Error updating primaries: {e}"}
+
+def contact_data_server(port, host = 'localhost'):
+    print(f'Connecting to data server...')
+    client_socket = socket(AF_INET, SOCK_STREAM)
+    client_socket.connect((host, int(port)))
+    return client_socket
 
 def handle_client(conn: socket, addr, data_service: DataService, master_server):
     client_message = conn.recv(1024)
@@ -151,6 +189,9 @@ def handle_client(conn: socket, addr, data_service: DataService, master_server):
             replicas = content.get('replicas', [])
             latest_commit_id = content.get('latest_commit_id', '')
             response = data_service.update_metadata(file_path, primary_server, replicas, latest_commit_id)
+        case 'update_primaries':
+            files = content.get('files', [])
+            response = data_service.update_primaries(files)
         case _:
             print('Invalid operation. Please try again !!')
             response = {'status': 'error', 'message': 'Invalid operation'}

@@ -64,8 +64,13 @@ class LeaseManager:
         # Wait for the grant event to be set by another thread
         self.grant_event.wait()
 
-        # Now the lease should be granted
-        return {'status': 'success', 'message': f'Lease granted for {lease_duration} seconds'}
+        # Check the current lease for the file
+        lease_end_time, current_client_id = self.leases.get(file_path, (0, None))
+        if client_id == current_client_id:
+            # Now the lease should be granted
+            return {'status': 'success', 'message': f'Lease granted for {lease_duration} seconds'}
+        
+        return {'status': 'error', 'message': f'Lease not granted for {file_path}'}
 
     def check_lease(self, file_path, client_id):
         lease_end_time, lease_client_id = self.leases.get(file_path, (0, None))
@@ -100,6 +105,14 @@ class LeaseManager:
                 expired_files.append(file_path)
 
         return expired_files
+    
+    def free_leases(self):
+        for file_name, _ in self.leases.items():
+            file_lease_queue = self.lease_queue[file_name]
+            for _ in file_lease_queue:
+                _, _ = self.lease_queue[file_name].pop(0)
+                self.grant_event.set()
+        self.leases = defaultdict()
 
     def process_expired_leases(self, expired_files):
         for file_path in expired_files:
@@ -125,6 +138,31 @@ def contact_name_server():
     client_socket = socket(AF_INET, SOCK_STREAM)
     client_socket.connect(('localhost', 12345))
     return client_socket
+
+def fail_server(data_server: DataServer, lease_manager: LeaseManager):
+    print('server is about to fail')
+    # TODO: fail all lease grantings/ pendings
+    lease_manager.free_leases()
+
+    # inform data_server about failures
+    ns_conn = contact_name_server()
+    message = {
+        'operation' : 'update_primaries',
+        'content' : {
+                        'files': data_server.primaries
+                    }
+    }
+    message = json.dumps(message).encode()
+    ns_conn.send(message)
+
+    print(f'message sent to name server {message}')
+    response = ns_conn.recv(1024).decode()
+    response = json.loads(response)
+    print(f'updating primaries result is {response}')
+    ns_conn.close()
+
+    print('exit application..')
+    exit(0)
 
 def contact_data_server(port, host = 'localhost'):
     print(f'Connecting to data server...')
@@ -286,18 +324,19 @@ def write_file_globally(file_name, lease_duration, conn :socket):
                 status = response.get('status', 'error')
                 message = response.get('message')
 
-                # update nameserver with updated metadata
-                ns_conn = contact_name_server()
-                message = {
-                    'file_path' : file_name,
-                    'operation' : 'update_metadata',
-                    'content' : {
-                                    "file_path": file_name,
-                                    "primary_server": primary_server,
-                                    "replicas": replicas+[PORT],
-                                    "latest_commit_id": str(int(latest_commit_id)+1) if latest_commit_id is not None else latest_commit_id
-                                }
-                }
+                if PORT not in replicas:
+                    # update nameserver with updated metadata
+                    ns_conn = contact_name_server()
+                    message = {
+                        'file_path' : file_name,
+                        'operation' : 'update_metadata',
+                        'content' : {
+                                        "file_path": file_name,
+                                        "primary_server": primary_server,
+                                        "replicas": replicas+[PORT],
+                                        "latest_commit_id": str(int(latest_commit_id)+1) if latest_commit_id is not None else latest_commit_id
+                                    }
+                    }
                 message = json.dumps(message).encode()
                 ns_conn.send(message)
                 print(f'message sent to name server {message}')
@@ -441,6 +480,12 @@ def main():
             case 'lease':
                 print(f'Lease requested by {addr[0] + str(addr[1])}')
                 response = lease_manager.request_lease(file_name,str(addr[1]), conn, lease_duration)
+            case 'add_primary':
+                response = data_server.add_primary(file_name)
+                response = {'status': 'success', 'message': 'Added to primaries successfully...'}
+            case 'fail_server':
+                fail_server(data_server, lease_manager)
+                response = {'status': 'success', 'message': 'Added to primaries successfully...'}
             case _:
                 print('Invalid operation. Please try again !!')
 

@@ -1,9 +1,12 @@
 from socket import *
 import json
 import random
+import time
 
 HOST = "127.0.0.1"
 PORTS = ['11234']
+MAX_RETRIES = 3  
+RETRY_INTERVAL = 2
 
 def instructions():
     # instructions to the user
@@ -17,6 +20,9 @@ def instructions():
 
 def read_file(file_name):
     client_socket = contact_random_server()
+    if client_socket is None:
+        print('Unable to connect to any server to operate...')
+        return False
     
     # ask for read
     message = {
@@ -38,14 +44,27 @@ def read_file(file_name):
     client_socket.close()
 
 def contact_random_server():
-    port = random.choice(PORTS)
-    print(f'Connecting to random server on port {port}...')
-    client_socket = socket(AF_INET, SOCK_STREAM)
-    client_socket.connect((HOST, int(port)))
-    return client_socket
+    for _ in range(MAX_RETRIES):
+        port = random.choice(PORTS)
+        print(f'Connecting to random server on port {port}...')
+        client_socket = socket(AF_INET, SOCK_STREAM)
+
+        try:
+            client_socket.connect((HOST, int(port)))
+            return client_socket  # Successful connection, return the socket
+        except Exception as e:
+            print(f"Error connecting to server on port {port}: {e}")
+            time.sleep(RETRY_INTERVAL)  # Wait before retrying
+
+    print(f"Failed to connect to any server after {MAX_RETRIES} attempts.")
+    return None  # Return None to indicate failure
 
 def write_file(file_name):
     client_socket = contact_random_server()
+
+    if client_socket is None:
+        print('Unable to connect to any server to operate...')
+        return False
     
     # ask for write
     message = {
@@ -95,6 +114,9 @@ def write_file(file_name):
 
 def create_file(file_name):
     client_socket = contact_random_server()
+    if client_socket is None:
+        print('Unable to connect to any server to operate...')
+        return False
     
     # ask for write
     message = {
@@ -137,6 +159,20 @@ def seek_file():
     # TODO: Implement this
     print("Deleting a file...")
 
+def fail_server():
+    client_socket = contact_random_server()
+    message = {
+        'operation': 'fail_server',
+    }
+    data = json.dumps(message).encode()
+    client_socket.send(data)
+
+    response = client_socket.recv(1024).decode()
+    response = json.loads(response)
+    message = response.get('message')
+    print(message)
+    return True
+
 def check_valid_input(file_name):
     return '.txt' in file_name
 
@@ -174,6 +210,10 @@ if __name__ == "__main__":
                 file_name = _input.split()[1]
                 response = create_file(file_name)
                 print("Exiting <read> mode...\n")
+
+            elif '<fail>' in _input:
+                response = fail_server()
+                print("Exiting <fail> mode...\n")
 
             else:
                 match _input:

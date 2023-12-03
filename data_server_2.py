@@ -230,7 +230,20 @@ def read_file_globally(file_name):
     except Exception as e:
         print(f'Error fetching {file_name}: {e}')
         return {'status' : 'error', 'message' : f'Error fetching {file_name} from the data server: {e}'}
-  
+
+def get_a_copy(file_name, primary_server):
+    server_socket = contact_data_server(int(primary_server))
+    message = {'file_name': file_name, 'operation': 'r'}
+    message = json.dumps(message).encode()
+    server_socket.send(message)
+    response = server_socket.recv(1024).decode()
+    response = json.loads(response)
+    content = response.get('content')
+    print('File read successfully')
+    # make a local copy
+    with open(f'{PATH}{file_name}', 'w') as file:
+        file.write(content)
+    # return local copy
 
 def write_file_locally(file_name, conn: socket, lease_manager: LeaseManager):
     try:
@@ -418,6 +431,147 @@ def create_file(file_name, conn: socket):
         print(f'Error creating {file_name}: {e}')
         return {'status' : 'error', 'message' : f'Error creating {file_name} to the data server: {e}'}
 
+def seek_file_locally(file_name, conn: socket, lease_manager: LeaseManager, seek_index):
+    try:
+        response = lease_manager.request_lease(file_name, 'current', None, 120)
+        print(f'self leasing response{response}')
+
+        message = json.dumps(response).encode()
+        conn.send(message)
+
+        response = conn.recv(1024).decode()
+        response = json.loads(response)
+
+        content = response.get('content')
+
+        with open(f'{PATH}{file_name}', 'r+') as file:
+            file.seek(int(seek_index))
+            file.write(content)
+
+        server_socket = contact_name_server()
+        message = {'operation': 'get_metadata', 'file_path': file_name}
+        message = json.dumps(message).encode()
+        server_socket.send(message)
+        response = server_socket.recv(1024).decode()
+        response = json.loads(response)
+        data = response.get('content')
+        replicas = data['replicas']
+        server_socket.close()
+
+        replicate(file_name, replicas)
+        return { 'status': 'success', 'message': f'successfully seek to file'}
+    except Exception as e:
+        return { 'status': 'error', 'message': f'exception in seeking to file{e}'}
+
+def seek_file_globally(file_name, lease_duration, conn :socket, seek_index):
+    try:
+        # get info about primary
+        server_socket = contact_name_server()
+        message = {'operation': 'get_metadata', 'file_path': file_name}
+        message = json.dumps(message).encode()
+        server_socket.send(message)
+        response = server_socket.recv(1024).decode()
+        response = json.loads(response)
+        data = response.get('content')
+
+        if data is None:
+            print(f'File {file_name} does not exist in the file system')
+            return {'status' : 'error', 'message' : 'File does not exist in the system...'}
+        
+        primary_server = data['primary_server']
+        replicas = data['replicas']
+        latest_commit_id = data['latest_commit_id']
+        server_socket.close()
+
+        if primary_server is  None:
+            print(f'File {file_name} does not exist in the file system')
+            return {'status' : 'error', 'message' : 'File does not exist in the system...'}
+        else:
+            # TODO: contact primary to request lease
+            print('trying to lease...')
+            message = {'file_name': file_name, 'operation': 'lease', 'lease_duration': 120}
+            message = json.dumps(message).encode()
+            server_socket = contact_data_server(port=primary_server)
+            server_socket.send(message)
+            encoded_response = server_socket.recv(1024)
+            print(f'lease response - {encoded_response}')
+            response = encoded_response.decode()
+            response = json.loads(response)
+            status = response.get('status', '')
+            message = response.get('message')
+            # TODO: message client to wait / write
+
+            if(status == 'pending'):
+                # message client to wait
+                print('lease pending...')
+                conn.send(encoded_response)
+                
+                # Receive another message
+                encoded_response = server_socket.recv(1024)
+                response = encoded_response.decode()
+                response = json.loads(response)
+                status = response.get('status', 'error')
+                message = response.get('message')
+                server_socket.close()
+
+            if(status == 'success'):
+                conn.send(encoded_response)
+                print('need to get content...')
+                response = conn.recv(1024).decode()
+                print(f'recieved content is {response}')
+                response = json.loads(response)
+                content = response.get('content')
+
+                # if file doesnot exist locally read and save
+                get_a_copy(file_name, primary_server)
+
+                # do the operation
+                with open(f'{PATH}{file_name}', 'r+') as file:
+                    file.seek(int(seek_index))
+                    file.write(content)
+
+                # replicate
+                print(f'primary is {primary_server}')
+                print(f'replicas are {replicas}')
+                response = replicate(file_name, [primary_server]+replicas)
+                print(f'replication result is {response}')
+                status = response.get('status', 'error')
+                message = response.get('message')
+
+                if PORT not in replicas:
+                    # update nameserver with updated metadata
+                    ns_conn = contact_name_server()
+                    message = {
+                        'file_path' : file_name,
+                        'operation' : 'update_metadata',
+                        'content' : {
+                                        "file_path": file_name,
+                                        "primary_server": primary_server,
+                                        "replicas": replicas+[PORT],
+                                        "latest_commit_id": str(int(latest_commit_id)+1) if latest_commit_id is not None else latest_commit_id
+                                    }
+                    }
+                message = json.dumps(message).encode()
+                ns_conn.send(message)
+                print(f'message sent to name server {message}')
+                response = ns_conn.recv(1024).decode()
+                response = json.loads(response)
+                status = response.get('status')
+                print(f'updating metadata result is {response}')
+                ns_conn.close()
+                
+                if(status != 'success'):
+                    print('Error writing file')
+                    return {'status' : 'error', 'message' : 'Error writing file...'}
+                else:
+                    print('Successfully wrote file')
+                    return {'status' : 'success', 'message' : 'Successfully wrote file...'}
+
+    except Exception as e:
+        print(f'Error writing {file_name}: {e}')
+        return {'status' : 'error', 'message' : f'Error writing {file_name} to the data server: {e}'}
+    
+
 def replicate(file_name, replicas):
     file = open(f'{PATH}/{file_name}', 'r')
     content = file.read()
@@ -551,6 +705,9 @@ def main():
                 response = read_file_locally(file_name) if file_name in data_server.primaries else read_file_globally(file_name)
             case 'w':
                 response = write_file_locally(file_name, conn, lease_manager) if file_name in data_server.primaries else write_file_globally(file_name, lease_duration, conn)
+            case 'seek':
+                seek_index = content['seek_index']
+                response = seek_file_locally(file_name, conn, lease_manager, seek_index) if file_name in data_server.primaries else seek_file_globally(file_name, lease_duration, conn, seek_index)
             case 'c':
                 response = create_file(file_name, conn)
                 if(response['status'] == 'success'):

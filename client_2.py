@@ -176,9 +176,61 @@ def delete_file(file_name):
 
     client_socket.close()
 
-def seek_file():
-    # TODO: Implement this
-    print("Deleting a file...")
+def seek_file(file_name, seek_index):
+    client_socket = contact_random_server()
+
+    if client_socket is None:
+        print('Unable to connect to any server to operate...')
+        return False
+    
+    # ask for write
+    message = {
+        'file_name': file_name,
+        'operation': 'seek',
+        'content' :{
+            'seek_index' : seek_index
+        }
+    }
+    data = json.dumps(message).encode()
+    client_socket.send(data)
+    
+    response = client_socket.recv(1024).decode()
+    response = json.loads(response)
+    status = response.get('status', 'error')
+    message = response.get('message')
+
+    # if pending wait for another message
+    if status == 'pending':
+        print(f'Received response from server...')
+        print(message)
+        
+        # Receive another message
+        response = client_socket.recv(1024).decode()
+        response = json.loads(response)
+        status = response.get('status', 'error')
+        message = response.get('message')
+
+    # if success take input and send
+    if status == 'success':
+        print(f'Received response from server...')
+        print(message)
+        
+        print('Sending file contents to server...')
+        content = input('Please enter the content to write: ')
+
+        message = {
+            'content': content
+        }
+        data = json.dumps(message).encode()
+        client_socket.send(data)
+
+        response = client_socket.recv(1024).decode()
+        response = json.loads(response)
+
+    print(f'Received response from server...')
+    print(response)
+    client_socket.close()
+    return True if status == 'success' else False
 
 def fail_server():
     client_socket = contact_random_server()
@@ -213,6 +265,28 @@ if __name__ == "__main__":
                     print("File written successfully!")
                 else:
                     print("Failed to write file.")
+
+                print("Exiting <write> mode...\n")
+            
+            if "<seek>" in _input:
+                while not check_valid_input(_input):
+                    _input = input('Invalid input; please try using a valid name')
+
+                file_name = _input.split()[1]
+                seek_index = _input.split()[2]
+
+                try:
+                    seek_index = int(seek_index)
+                except ValueError:
+                    print("Please enter an integer index for seeking the file.")
+                    print("Exiting <write> mode...\n")
+                    continue
+                response = seek_file(file_name, seek_index)
+
+                if response:
+                    print("File seek successful!")
+                else:
+                    print("Failed to seek file.")
 
                 print("Exiting <write> mode...\n")
 

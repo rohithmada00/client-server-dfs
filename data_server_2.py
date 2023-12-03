@@ -30,6 +30,10 @@ class DataServer:
         self.primaries.append(file_name)
         self.save_primaries()
 
+    def remove_primary(self, file_name):
+        self.primaries = [p for p in self.primaries if p != file_name]
+        self.save_primaries()
+
 class LeaseManager:
     def __init__(self, expiration_check_interval=10):
         # Dictionary to store lease info: {file_path: (lease_end_time, client_id)}
@@ -201,15 +205,15 @@ def read_file_globally(file_name):
         response = server_socket.recv(1024).decode()
         response = json.loads(response)
         data = response.get('content')
-        primary_server = data['primary_server']
         server_socket.close()
 
-        if primary_server is None:
+        if data is None:
             print(f'File {file_name} does not exist in the file system')
             return {'status' : 'error', 'message' : 'File does not exist in the system...'}
 
         else:
             # contact primary
+            primary_server = data['primary_server']
             server_socket = contact_data_server(int(primary_server))
             message = {'file_name': file_name, 'operation': 'r'}
             message = json.dumps(message).encode()
@@ -507,7 +511,7 @@ def delete_file_globally(file_name, lease_manager: LeaseManager):
         # remove metadata at the name server
         # get info about primary
         server_socket = contact_name_server()
-        message = {'operation': 'get_metadata', 'file_path': file_name}
+        message = {'operation': 'delete_metadata', 'file_path': file_name}
         message = json.dumps(message).encode()
         server_socket.send(message)
         response = server_socket.recv(1024).decode()
@@ -565,6 +569,9 @@ def main():
                 response = delete_file_locally(file_name)
             case 'delete_globally':
                 response = delete_file_globally(file_name, lease_manager)
+                print(f'global deletion response {response}')
+                if response['status'] == 'success':
+                    data_server.remove_primary(file_name)
             case _:
                 print('Invalid operation. Please try again !!')
 

@@ -3,6 +3,7 @@ import json
 import time
 from collections import defaultdict
 from threading import Event, Thread
+import os
 
 PATH = 'replica_1/'
 PORT = 11234 
@@ -108,11 +109,15 @@ class LeaseManager:
     
     def free_leases(self):
         for file_name, _ in self.leases.items():
-            file_lease_queue = self.lease_queue[file_name]
-            for _ in file_lease_queue:
-                _, _ = self.lease_queue[file_name].pop(0)
-                self.grant_event.set()
+            self.free_file_leases(file_name)
+            
+    def free_file_leases(self, file_name):
+        file_lease_queue = self.lease_queue[file_name]
+        for _ in file_lease_queue:
+            _, _ = self.lease_queue[file_name].pop(0)
+            self.grant_event.set()
         self.leases = defaultdict()
+
 
     def process_expired_leases(self, expired_files):
         for file_path in expired_files:
@@ -446,6 +451,75 @@ def save(file_name,  content):
     print(file_name + " successfully replicated...\n")
     return {'status': 'success', 'message':'file replicated successfully..'}
 
+def delete_file_locally(file_name):
+    try:
+        os.remove(f'{PATH}{file_name}')
+        print(f'{file_name} successfully deleted.')
+        return {'status': 'success', 'message': 'File deleted successfully.'}
+    except FileNotFoundError:
+        print(f'{file_name} not found.')
+        return {'status': 'error', 'message': 'File not found.'}
+    except Exception as e:
+        print(f'Error deleting {file_name}: {e}')
+        return {'status': 'error', 'message': 'Error deleting file.'}
+    
+def delete_file_globally(file_name, lease_manager: LeaseManager):
+    # Get metadata
+    # Contact primary to delete globally if its not primary
+    # If it is primary then delete locally and send request to other replicas
+
+    # get info about primary
+    server_socket = contact_name_server()
+    message = {'operation': 'get_metadata', 'file_path': file_name}
+    message = json.dumps(message).encode()
+    server_socket.send(message)
+    response = server_socket.recv(1024).decode()
+    response = json.loads(response)
+    data = response.get('content')
+
+    if data is None:
+        print(f'File {file_name} does not exist in the file system')
+        return {'status' : 'error', 'message' : 'File does not exist in the system...'}
+    
+    primary_server = data['primary_server']
+    replicas = data['replicas']
+    # latest_commit_id = data['latest_commit_id']
+    server_socket.close()
+
+    # check if the current server is primary
+    if str(PORT) == primary_server:
+        response = lease_manager.request_lease(file_name, 'current', None, 120)
+        if response['status'] != 'success':
+            print(f"Error leasing :{file_name}")
+            return {'status': 'error', 'message': f'Error deleting file {file_name}'}
+        for replica in replicas:
+            server_socket = contact_data_server(port=int(replica))
+            message = {'file_name': file_name, 'operation': 'delete_locally'}
+            server_socket.send(json.dumps(message).encode())
+            response = server_socket.recv(1024).decode()
+            response = json.loads(response)
+            if response['status'] != 'success':
+                print(f'Error deleting file from replica {replica}: {response["message"]}')
+                return response
+        response = delete_file_locally(file_name)
+        # free pending leases
+        lease_manager.free_file_leases(file_name)
+        # remove metadata at the name server
+        # get info about primary
+        server_socket = contact_name_server()
+        message = {'operation': 'get_metadata', 'file_path': file_name}
+        message = json.dumps(message).encode()
+        server_socket.send(message)
+        response = server_socket.recv(1024).decode()
+        response = json.loads(response)
+        print(f'response to deleting metadata : {response}')
+    else:
+        server_socket = contact_data_server(port=int(primary_server))
+        message = {'file_name': file_name, 'operation': 'delete_globally'}
+        server_socket.send(json.dumps(message).encode())
+        response = server_socket.recv(1024).decode()
+
+    return {'status': 'success', 'message': 'File deleted globally.'}
 
 def main():
     data_server = DataServer()
@@ -487,6 +561,10 @@ def main():
                 response = {'status': 'success', 'message': 'Added to primaries successfully...'}
             case 'fail_server':
                 fail_server(data_server, lease_manager, conn)
+            case 'delete_locally':
+                response = delete_file_locally(file_name)
+            case 'delete_globally':
+                response = delete_file_globally(file_name, lease_manager)
             case _:
                 print('Invalid operation. Please try again !!')
 

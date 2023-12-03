@@ -76,6 +76,21 @@ class DataService:
             return {'status': 'success', 'message': 'No metadata available', 'content': None}
 
         return {'status': 'success', 'message': 'Metadata available', 'content': self.get_record_as_a_dict(result)}
+    
+    def delete_metadata(self, file_path):
+        conn = sqlite3.connect('dfs.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM metadata WHERE file_path=?", (file_path,))
+        result = cursor.fetchone()
+
+        if result is None:
+            return {'status': 'success', 'message': 'No metadata available', 'content': None}
+        else:
+             cursor.execute("DELETE FROM metadata WHERE file_path=?", (file_path,))
+             conn.commit()
+        conn.close()
+
+        return {'status': 'success', 'message': 'Metadata available', 'content': self.get_record_as_a_dict(result)}
 
 
     def update_metadata(self, file_path, primary_server, replicas, latest_commit_id):
@@ -188,6 +203,8 @@ def handle_client(conn: socket, addr, data_service: DataService, master_server):
             response = data_service.create_file(file_path, master_server, primary)
         case 'get_metadata':
             response = data_service.get_metadata(file_path)
+        case 'delete_metadata':
+            response = data_service.delete_metadata(file_path)
         case 'update_metadata':
             primary_server = content.get('primary_server', '')
             replicas = content.get('replicas', [])

@@ -583,7 +583,6 @@ def delete_file_globally(file_name, lease_manager: LeaseManager):
         server_socket = contact_data_server(port=int(primary_server))
         message = {'file_name': file_name, 'operation': 'delete_globally'}
         server_socket.send(json.dumps(message).encode())
-        response = server_socket.recv(1024).decode()
 
     return {'status': 'success', 'message': 'File deleted globally.'}
 

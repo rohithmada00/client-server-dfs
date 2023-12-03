@@ -90,7 +90,7 @@ class DataService:
              conn.commit()
         conn.close()
 
-        return {'status': 'success', 'message': 'Metadata available', 'content': self.get_record_as_a_dict(result)}
+        return {'status': 'success', 'message': 'Metadata deleted...'}
 
 
     def update_metadata(self, file_path, primary_server, replicas, latest_commit_id):

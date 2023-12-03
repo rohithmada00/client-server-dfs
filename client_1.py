@@ -151,9 +151,30 @@ def create_file(file_name):
 
     return True if status == 'success' else False
 
-def delete_file():
-    # TODO: Implement this
-    print("Deleting a file...")
+def delete_file(file_name):
+    client_socket = contact_random_server()
+    if client_socket is None:
+        print('Unable to connect to any server to operate...')
+        return False
+    
+    # ask for read
+    message = {
+        'file_name': file_name,
+        'operation': 'delete_globally',
+    }
+    data = json.dumps(message).encode()
+    client_socket.send(data)
+    
+    response = client_socket.recv(1024).decode()
+    response = json.loads(response)
+    print(f'Received response from server...')
+    status = response.get('status', 'error')
+
+    if status == 'success':
+        content = response.get('content', '###')
+        print(f'File content:\n{content}')
+
+    client_socket.close()
 
 def seek_file():
     # TODO: Implement this
@@ -209,6 +230,14 @@ if __name__ == "__main__":
 
                 file_name = _input.split()[1]
                 response = create_file(file_name)
+                print("Exiting <read> mode...\n")
+
+            elif "<delete>" in _input:
+                while not check_valid_input(_input):
+                    _input = input('Invalid input; please try using a valid name')
+
+                file_name = _input.split()[1]
+                response = delete_file(file_name)
                 print("Exiting <read> mode...\n")
 
             elif '<fail>' in _input:

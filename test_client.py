@@ -260,15 +260,15 @@ def test_create_read_delete():
     create_response = create_file('test_file_2.txt', 'testing hello world !!!')
     print(f'Create response: {create_response}')
     assert create_response['status'] == 'success'
-    time.sleep(0.5)
+    time.sleep(1)
     read_response = read_file('test_file_2.txt')
     print(f'Read response: {read_response}')
     assert read_response['content'] == 'testing hello world !!!'
-    time.sleep(0.5)
+    time.sleep(1)
     delete_response = delete_file('test_file_2.txt')
     print(f'Delete response: {delete_response}')
     assert delete_response['status'] == 'success'
-    time.sleep(0.5)
+    time.sleep(1)
     read_response = read_file('test_file_2.txt')
     assert read_response['status'] == 'error' 
 
@@ -276,12 +276,15 @@ def test_file_seek():
     create_response = create_file('test_file_1.txt', 'testing hello world !!!')
     print(f'Create response: {create_response}')
     assert create_response['status'] == 'success'
+    time.sleep(1)
     seek_response = seek_file('test_file_1.txt', 8)
     print(f'Seek response: {seek_response}')
     assert seek_response['content'] == 'hello world !!!'
+    time.sleep(1)
     delete_response = delete_file('test_file_1.txt')
     assert delete_response['status'] == 'success'
     print(f'Delete response: {delete_response}')
+    time.sleep(1)
     read_response = read_file('test_file_1.txt')
     assert read_response['status'] == 'error' 
 
@@ -399,6 +402,7 @@ def test_file_consistency():
 
 if __name__ == "__main__":
     print('starting test client')
-    #test_create_read_delete()
-    #test_file_seek()
-    plot_same_file_multi_writes()
+    test_create_read_delete()
+    time.sleep(1)
+    test_file_seek()
+    # plot_same_file_multi_writes()

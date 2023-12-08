@@ -7,7 +7,7 @@ import random
 
 class MasterServer:
     def __init__(self):
-        self.available_servers = ['11234', '11235', '11236',]
+        self.available_servers = ['11234', '11235', '11236','11237','11238']
         self.server_check_interval = 60
         # self.server_check_thread = threading.Thread(target=self.periodic_server_check)
         # self.server_check_thread.daemon = True

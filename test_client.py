@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import threading
 
 HOST = "127.0.0.1"
-PORTS = ['11234', '12345', '12346', '12347', '12348']
+PORTS = ['11234', '11235', '11236', '11237', '11238']
 MAX_RETRIES = 3  
 RETRY_INTERVAL = 2
 
@@ -139,7 +139,7 @@ def create_file(file_name, content=None):
     status = response.get('status', 'error')
     message = response.get('message')
     if status == 'error':
-        return False
+        return response
     
     if content is None:
         content = input('Please enter the content to write: ')
@@ -278,7 +278,7 @@ def test_file_seek():
     assert create_response['status'] == 'success'
     seek_response = seek_file('test_file_1.txt', 8)
     print(f'Seek response: {seek_response}')
-    assert seek_response['message'] == 'hello world !!!'
+    assert seek_response['content'] == 'hello world !!!'
     delete_response = delete_file('test_file_1.txt')
     assert delete_response['status'] == 'success'
     print(f'Delete response: {delete_response}')
@@ -369,15 +369,16 @@ def plot_same_file_multi_writes():
     # Initialize lists to store the timings
     serial_timings = []
     parallel_timings = []
-    write_counts = [5, 10, 15, 20,]  # The counts of writes you want to test
-
+    write_counts = [1, 2, 3, 4,]  # The counts of writes you want to test
+    create_response = create_file("test_file.txt")
+    assert create_response['status']=='success'
     for count in write_counts:
         # Run Serial Test
-        serial_time = serial_write_test("test_file", "Sample Content", count)
+        serial_time = serial_write_test("test_file.txt", "Sample Content", count)
         serial_timings.append(serial_time)
 
         # Run Parallel Test
-        parallel_time = parallel_write_test("test_file", "Sample Content", count)
+        parallel_time = parallel_write_test("test_file.txt", "Sample Content", count)
         parallel_timings.append(parallel_time)
 
     # Plotting the results
@@ -398,4 +399,6 @@ def test_file_consistency():
 
 if __name__ == "__main__":
     print('starting test client')
-    test_create_read_delete()
+    #test_create_read_delete()
+    #test_file_seek()
+    plot_same_file_multi_writes()

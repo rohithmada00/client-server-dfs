@@ -3,6 +3,7 @@ import json
 import time
 from collections import defaultdict
 from threading import Event, Thread
+import os
 
 PATH = 'replica_5/'
 PORT = 11238
@@ -19,7 +20,7 @@ class DataServer:
                 self.primaries = json.load(file)
         except FileNotFoundError:
             # If the file doesn't exist, initialize with a default value
-            self.primaries = ['sks.txt']
+            self.primaries = []
 
     def save_primaries(self):
         with open(self.FILE_PATH, 'w') as file:
@@ -27,6 +28,10 @@ class DataServer:
 
     def add_primary(self, file_name):
         self.primaries.append(file_name)
+        self.save_primaries()
+
+    def remove_primary(self, file_name):
+        self.primaries = [p for p in self.primaries if p != file_name]
         self.save_primaries()
 
 class LeaseManager:
@@ -64,8 +69,13 @@ class LeaseManager:
         # Wait for the grant event to be set by another thread
         self.grant_event.wait()
 
-        # Now the lease should be granted
-        return {'status': 'success', 'message': f'Lease granted for {lease_duration} seconds'}
+        # Check the current lease for the file
+        lease_end_time, current_client_id = self.leases.get(file_path, (0, None))
+        if client_id == current_client_id:
+            # Now the lease should be granted
+            return {'status': 'success', 'message': f'Lease granted for {lease_duration} seconds'}
+        
+        return {'status': 'error', 'message': f'Lease not granted for {file_path}'}
 
     def check_lease(self, file_path, client_id):
         lease_end_time, lease_client_id = self.leases.get(file_path, (0, None))
@@ -100,6 +110,18 @@ class LeaseManager:
                 expired_files.append(file_path)
 
         return expired_files
+    
+    def free_leases(self):
+        for file_name, _ in self.leases.items():
+            self.free_file_leases(file_name)
+            
+    def free_file_leases(self, file_name):
+        file_lease_queue = self.lease_queue[file_name]
+        for _ in file_lease_queue:
+            _, _ = self.lease_queue[file_name].pop(0)
+            self.grant_event.set()
+        self.leases = defaultdict()
+
 
     def process_expired_leases(self, expired_files):
         for file_path in expired_files:
@@ -125,6 +147,33 @@ def contact_name_server():
     client_socket = socket(AF_INET, SOCK_STREAM)
     client_socket.connect(('localhost', 12345))
     return client_socket
+
+def fail_server(data_server: DataServer, lease_manager: LeaseManager, conn: socket):
+    print('server is about to fail')
+    # TODO: fail all lease grantings/ pendings
+    lease_manager.free_leases()
+
+    # inform data_server about failures
+    ns_conn = contact_name_server()
+    message = {
+        'operation' : 'update_primaries',
+        'content' : {
+                        'files': data_server.primaries
+                    }
+    }
+    message = json.dumps(message).encode()
+    ns_conn.send(message)
+
+    print(f'message sent to name server {message}')
+    response = ns_conn.recv(1024).decode()
+    response = json.loads(response)
+    print(f'updating primaries result is {response}')
+    ns_conn.close()
+
+    response = {'status': 'success', 'message': 'Added to primaries successfully...'}
+    conn.send(json.dumps(response).encode())
+    print('exit application..')
+    exit(0)
 
 def contact_data_server(port, host = 'localhost'):
     print(f'Connecting to data server...')
@@ -156,15 +205,15 @@ def read_file_globally(file_name):
         response = server_socket.recv(1024).decode()
         response = json.loads(response)
         data = response.get('content')
-        primary_server = data['primary_server']
         server_socket.close()
 
-        if primary_server is None:
+        if data is None:
             print(f'File {file_name} does not exist in the file system')
             return {'status' : 'error', 'message' : 'File does not exist in the system...'}
 
         else:
             # contact primary
+            primary_server = data['primary_server']
             server_socket = contact_data_server(int(primary_server))
             message = {'file_name': file_name, 'operation': 'r'}
             message = json.dumps(message).encode()
@@ -182,6 +231,68 @@ def read_file_globally(file_name):
         print(f'Error fetching {file_name}: {e}')
         return {'status' : 'error', 'message' : f'Error fetching {file_name} from the data server: {e}'}
   
+
+def seek_file_locally(file_name, seek_index):
+    try:
+        with open(f'{PATH}{file_name}', 'r') as file:
+            file.seek(seek_index)
+            content = file.read()
+            print('file read')
+            response = {
+                'status' : 'success',
+                'content' : content
+            }
+            return response
+    except IOError:
+        print(f'{file_name} does not exist')
+        return {'status' : 'error', 'message' : 'File does not exist in the system...'}
+
+def seek_file_globally(file_name, seek_index):
+    try:
+        server_socket = contact_name_server()
+        # get info about primary
+        message = {'operation': 'get_metadata', 'file_path': file_name}
+        message = json.dumps(message).encode()
+        server_socket.send(message)
+        response = server_socket.recv(1024).decode()
+        response = json.loads(response)
+        data = response.get('content')
+        server_socket.close()
+
+        if data is None:
+            print(f'File {file_name} does not exist in the file system')
+            return {'status' : 'error', 'message' : 'File does not exist in the system...'}
+
+        else:
+            # contact primary
+            primary_server = data['primary_server']
+            server_socket = contact_data_server(int(primary_server))
+            message = {'file_name': file_name, 'operation': 'r'}
+            message = json.dumps(message).encode()
+            server_socket.send(message)
+            response = server_socket.recv(1024).decode()
+            response = json.loads(response)
+            content = response.get('content')
+            print('File read successfully')
+            # make a local copy
+            with open(f'{PATH}{file_name}', 'w') as file:
+                file.write(content)
+            # return local copy
+            return seek_file_locally(file_name, seek_index)
+    except Exception as e:
+        print(f'Error fetching {file_name}: {e}')
+        return {'status' : 'error', 'message' : f'Error fetching {file_name} from the data server: {e}'}
+
+def list_files():
+    # get info about primary
+    server_socket = contact_name_server()
+    message = {'operation': 'list_files'}
+    message = json.dumps(message).encode()
+    server_socket.send(message)
+    response = server_socket.recv(1024).decode()
+    response = json.loads(response)
+    return response
+
 
 def write_file_locally(file_name, conn: socket, lease_manager: LeaseManager):
     try:
@@ -286,18 +397,19 @@ def write_file_globally(file_name, lease_duration, conn :socket):
                 status = response.get('status', 'error')
                 message = response.get('message')
 
-                # update nameserver with updated metadata
-                ns_conn = contact_name_server()
-                message = {
-                    'file_path' : file_name,
-                    'operation' : 'update_metadata',
-                    'content' : {
-                                    "file_path": file_name,
-                                    "primary_server": primary_server,
-                                    "replicas": replicas+[PORT],
-                                    "latest_commit_id": str(int(latest_commit_id)+1) if latest_commit_id is not None else latest_commit_id
-                                }
-                }
+                if PORT not in replicas:
+                    # update nameserver with updated metadata
+                    ns_conn = contact_name_server()
+                    message = {
+                        'file_path' : file_name,
+                        'operation' : 'update_metadata',
+                        'content' : {
+                                        "file_path": file_name,
+                                        "primary_server": primary_server,
+                                        "replicas": replicas+[PORT],
+                                        "latest_commit_id": str(int(latest_commit_id)+1) if latest_commit_id is not None else latest_commit_id
+                                    }
+                    }
                 message = json.dumps(message).encode()
                 ns_conn.send(message)
                 print(f'message sent to name server {message}')
@@ -324,7 +436,10 @@ def create_file(file_name, conn: socket):
         ns_conn = contact_name_server()
         message = {
             "file_path": file_name,
-            'operation': 'create_file'
+            'operation': 'create_file',
+            'content' : {
+                'primary': str(PORT)
+            }
         }
         message = json.dumps(message).encode()
         ns_conn.send(message)
@@ -333,7 +448,7 @@ def create_file(file_name, conn: socket):
         print(f'response from nameserver: {response}')
         status = response.get('status', 'error')
         data = response.get('content')
-        replicas = response.get('replicas')
+        replicas = data.get('replicas')
         ns_conn.close()
 
         if status == 'success':
@@ -351,6 +466,7 @@ def create_file(file_name, conn: socket):
             with open(f'{PATH}{file_name}', 'w') as file:
                     file.write(content)
                     file.close()
+            print(f'starting replication - {replicas}')
             response = replicate(file_name, replicas)
             print(response)
 
@@ -381,7 +497,7 @@ def replicate(file_name, replicas):
             response = server_socket.recv(1024).decode()
             response = json.loads(response)
             status = response.get('status')
-            message = response.get('message')
+            server_socket.close()
             print(f'response from {replica}')
             print(message)
 
@@ -401,6 +517,74 @@ def save(file_name,  content):
     print(file_name + " successfully replicated...\n")
     return {'status': 'success', 'message':'file replicated successfully..'}
 
+def delete_file_locally(file_name):
+    try:
+        os.remove(f'{PATH}{file_name}')
+        print(f'{file_name} successfully deleted.')
+        return {'status': 'success', 'message': 'File deleted successfully.'}
+    except FileNotFoundError:
+        print(f'{file_name} not found.')
+        return {'status': 'error', 'message': 'File not found.'}
+    except Exception as e:
+        print(f'Error deleting {file_name}: {e}')
+        return {'status': 'error', 'message': 'Error deleting file.'}
+    
+def delete_file_globally(file_name, lease_manager: LeaseManager):
+    # Get metadata
+    # Contact primary to delete globally if its not primary
+    # If it is primary then delete locally and send request to other replicas
+
+    # get info about primary
+    server_socket = contact_name_server()
+    message = {'operation': 'get_metadata', 'file_path': file_name}
+    message = json.dumps(message).encode()
+    server_socket.send(message)
+    response = server_socket.recv(1024).decode()
+    response = json.loads(response)
+    data = response.get('content')
+
+    if data is None:
+        print(f'File {file_name} does not exist in the file system')
+        return {'status' : 'error', 'message' : 'File does not exist in the system...'}
+    
+    primary_server = data['primary_server']
+    replicas = data['replicas']
+    # latest_commit_id = data['latest_commit_id']
+    server_socket.close()
+
+    # check if the current server is primary
+    if str(PORT) == primary_server:
+        response = lease_manager.request_lease(file_name, 'current', None, 120)
+        if response['status'] != 'success':
+            print(f"Error leasing :{file_name}")
+            return {'status': 'error', 'message': f'Error deleting file {file_name}'}
+        for replica in replicas:
+            server_socket = contact_data_server(port=int(replica))
+            message = {'file_name': file_name, 'operation': 'delete_locally'}
+            server_socket.send(json.dumps(message).encode())
+            response = server_socket.recv(1024).decode()
+            response = json.loads(response)
+            if response['status'] != 'success':
+                print(f'Error deleting file from replica {replica}: {response["message"]}')
+                return response
+        response = delete_file_locally(file_name)
+        # free pending leases
+        lease_manager.free_file_leases(file_name)
+        # remove metadata at the name server
+        # get info about primary
+        server_socket = contact_name_server()
+        message = {'operation': 'delete_metadata', 'file_path': file_name}
+        message = json.dumps(message).encode()
+        server_socket.send(message)
+        response = server_socket.recv(1024).decode()
+        response = json.loads(response)
+        print(f'response to deleting metadata : {response}')
+    else:
+        server_socket = contact_data_server(port=int(primary_server))
+        message = {'file_name': file_name, 'operation': 'delete_globally'}
+        server_socket.send(json.dumps(message).encode())
+
+    return {'status': 'success', 'message': 'File deleted globally.'}
 
 def main():
     data_server = DataServer()
@@ -437,10 +621,28 @@ def main():
             case 'lease':
                 print(f'Lease requested by {addr[0] + str(addr[1])}')
                 response = lease_manager.request_lease(file_name,str(addr[1]), conn, lease_duration)
+            case 'add_primary':
+                response = data_server.add_primary(file_name)
+                response = {'status': 'success', 'message': 'Added to primaries successfully...'}
+            case 'fail_server':
+                fail_server(data_server, lease_manager, conn)
+            case 'delete_locally':
+                response = delete_file_locally(file_name)
+            case 'delete_globally':
+                response = delete_file_globally(file_name, lease_manager)
+                print(f'global deletion response {response}')
+                if response['status'] == 'success':
+                    data_server.remove_primary(file_name)
+            case 'list_files':
+                response = list_files()
+            case 'seek_files':
+                seek_index = content['seek_index']
+                response = seek_file_locally(file_name, seek_index) if file_name in data_server.primaries else seek_file_globally(file_name, seek_index)
             case _:
                 print('Invalid operation. Please try again !!')
 
         conn.send(json.dumps(response).encode())
+        conn.close()
 
 if __name__ == '__main__':
     main()

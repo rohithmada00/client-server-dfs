@@ -62,9 +62,10 @@ class DataService:
             "file_path": record[0],
             "primary_server": record[1],
             "replicas": json.loads(record[2]),
-            "latest_commit_id": record[3] if len(record) > 3 else None
+            "latest_commit_id": record[3] if len(record) > 3 else None,
+            "version_vector": json.loads(record[4]) if len(record) > 4 else None  # Added version_vector
         }
-    
+
     def get_metadata(self, file_path):
         conn = sqlite3.connect('dfs.db')
         cursor = conn.cursor()
@@ -76,7 +77,7 @@ class DataService:
             return {'status': 'success', 'message': 'No metadata available', 'content': None}
 
         return {'status': 'success', 'message': 'Metadata available', 'content': self.get_record_as_a_dict(result)}
-    
+
     def delete_metadata(self, file_path):
         conn = sqlite3.connect('dfs.db')
         cursor = conn.cursor()
@@ -86,28 +87,28 @@ class DataService:
         if result is None:
             return {'status': 'success', 'message': 'No metadata available', 'content': None}
         else:
-             cursor.execute("DELETE FROM metadata WHERE file_path=?", (file_path,))
-             conn.commit()
+            cursor.execute("DELETE FROM metadata WHERE file_path=?", (file_path,))
+            conn.commit()
         conn.close()
 
         return {'status': 'success', 'message': 'Metadata deleted...'}
 
 
-    def update_metadata(self, file_path, primary_server, replicas, latest_commit_id):
+    def update_metadata(self, file_path, primary_server, replicas, latest_commit_id, version_vector):
         try:
             conn = sqlite3.connect('dfs.db')
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT OR REPLACE INTO metadata (file_path, primary_server, replicas, latest_commit_id)
-                VALUES (?, ?, ?, ?)
-            ''', (file_path, primary_server, json.dumps(replicas), latest_commit_id))
+                INSERT OR REPLACE INTO metadata (file_path, primary_server, replicas, latest_commit_id, version_vector)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (file_path, primary_server, json.dumps(replicas), latest_commit_id, json.dumps(version_vector)))
             conn.commit()
             conn.close()
             return {'status': 'success'}
         except Exception as e:
             print(f"Error updating metadata: {e}")
             return {'status': 'error', 'message': str(e)}
-
+        
     def create_file(self, file_path, master_server: MasterServer, primary):
         try:
             metadata = self.get_metadata(file_path)
@@ -118,8 +119,9 @@ class DataService:
                 # File doesn't exist, proceed to create
                 primary_server, replicas = master_server.select_servers(primary)
 
-                # Add metadata to the database
-                self.update_metadata(file_path, primary_server, replicas, '0')
+                # Add metadata to the database with a default version vector
+                version_vector = {primary_server: 0}
+                self.update_metadata(file_path, primary_server, replicas, '0', version_vector)
 
                 return {
                     'status': 'success',
@@ -128,7 +130,8 @@ class DataService:
                         'file_path': file_path,
                         'primary_server': primary_server,
                         'replicas': replicas,
-                        'latest_commit_id': '0'
+                        'latest_commit_id': '0',
+                        'version_vector': version_vector
                     }
                 }
             else:
@@ -140,6 +143,7 @@ class DataService:
             return {'status': 'error', 'message': str(e)}
         
     def update_primaries(self, files:list):
+        # TODO: update the function for optimistic case
         try:
             for file in files:
                 print(f'update primary for {file}')
@@ -223,7 +227,8 @@ def handle_client(conn: socket, addr, data_service: DataService, master_server):
             primary_server = content.get('primary_server', '')
             replicas = content.get('replicas', [])
             latest_commit_id = content.get('latest_commit_id', '')
-            response = data_service.update_metadata(file_path, primary_server, replicas, latest_commit_id)
+            version_vector = content.get('version_vector', {})
+            response = data_service.update_metadata(file_path, primary_server, replicas, latest_commit_id, version_vector)
         case 'update_primaries':
             files = content.get('files', [])
             response = data_service.update_primaries(files)

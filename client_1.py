@@ -4,7 +4,7 @@ import random
 import time
 
 HOST = "127.0.0.1"
-PORTS = ['11234']
+PORTS = ['11234', '11235', '11236', '11237', '11238']
 MAX_RETRIES = 3  
 RETRY_INTERVAL = 2
 

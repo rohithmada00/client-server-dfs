@@ -612,7 +612,10 @@ def main():
 
         match operation:
             case 'r':
-                response = read_file_locally(file_name) if file_name in data_server.primaries else read_file_globally(file_name)
+                response = read_file_locally(file_name) 
+                # if not in local
+                if response['status'] == 'error':
+                    response = read_file_globally(file_name)
             case 'w':
                 response = write_file_locally(file_name, conn, lease_manager) if file_name in data_server.primaries else write_file_globally(file_name, lease_duration, conn)
             case 'c':
@@ -640,7 +643,9 @@ def main():
                 response = list_files()
             case 'seek_files':
                 seek_index = content['seek_index']
-                response = seek_file_locally(file_name, seek_index) if file_name in data_server.primaries else seek_file_globally(file_name, seek_index)
+                response = seek_file_locally(file_name, seek_index) 
+                if response['status'] == 'error':
+                    response = seek_file_globally(file_name, seek_index)
             case _:
                 print('Invalid operation. Please try again !!')
 

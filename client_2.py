@@ -169,14 +169,16 @@ def delete_file(file_name):
     response = json.loads(response)
     print(f'Received response from server...')
     status = response.get('status', 'error')
+    client_socket.close()
 
     if status == 'success':
         content = response.get('content', '###')
         print(f'File content:\n{content}')
+        return True
 
-    client_socket.close()
+    return False
 
-def seek_file(seek_index):
+def seek_file(file_name, seek_index):
     client_socket = contact_random_server()
     if client_socket is None:
         print('Unable to connect to any server to operate...')
@@ -185,7 +187,7 @@ def seek_file(seek_index):
     # ask for seek
     message = {
         'file_name': file_name,
-        'operation': 'seek',
+        'operation': 'seek_files',
         'content' :{
             'seek_index' : seek_index
         }
@@ -197,12 +199,14 @@ def seek_file(seek_index):
     response = json.loads(response)
     print(f'Received response from server...')
     status = response.get('status', 'error')
+    client_socket.close()
 
     if status == 'success':
         content = response.get('content', '###')
         print(f'File content:\n{content}')
+        return True
 
-    client_socket.close()
+    return False
 
 
 def fail_server():
@@ -220,27 +224,28 @@ def fail_server():
     return True
 
 def list_files():
+    print('1')
     client_socket = contact_random_server()
     if client_socket is None:
         print('Unable to connect to any server to operate...')
         return False
-    
+    print('2')
     # ask for read
     message = {
-        'file_name': file_name,
         'operation': 'list_files',
     }
     data = json.dumps(message).encode()
     client_socket.send(data)
-    
+    print('3')
     response = client_socket.recv(1024).decode()
     response = json.loads(response)
     print(f'Received response from server...')
     status = response.get('status', 'error')
 
     if status == 'success':
-        content = response.get('content', '###')
-        print(f'File content:\n{content}')
+        content = response.get('content', {})
+        files_list = content.get('files_list', [])
+        print(f'Files list:\n{files_list}')
 
     client_socket.close()
 
@@ -296,7 +301,7 @@ if __name__ == "__main__":
                     print("Failed to seek file.")
             
             elif "<list>" in _input:
-                response = list(file_name)
+                response = list_files()
                 if response:
                     print("Files listed successfully!")
                 else:

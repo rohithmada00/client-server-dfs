@@ -447,6 +447,12 @@ def create_file(file_name, conn: socket):
         response = json.loads(response)
         print(f'response from nameserver: {response}')
         status = response.get('status', 'error')
+
+        if status == 'error':
+            print('aido')
+            print(f'File {file_name} already exists in the file system')
+            return  {'status' : 'error', 'message' : f'{file_name} already exists in file system'}
+
         data = response.get('content')
         replicas = data.get('replicas')
         ns_conn.close()
@@ -489,7 +495,9 @@ def replicate(file_name, replicas):
 
     for replica in replicas:
         # Donot replicate to itself
-        if replica == PORT:
+        print(f'replica is {replica} port is {PORT}')
+        if str(replica) == str(PORT):
+            print(f'this server is also a replica ... not replicating')
             continue
         try:
             server_socket = contact_data_server(port=int(replica))
@@ -523,13 +531,13 @@ def delete_file_locally(file_name):
         print(f'{file_name} successfully deleted.')
         return {'status': 'success', 'message': 'File deleted successfully.'}
     except FileNotFoundError:
-        print(f'{file_name} not found.')
+        print(f'{file_name} not found locally')
         return {'status': 'error', 'message': 'File not found.'}
     except Exception as e:
         print(f'Error deleting {file_name}: {e}')
         return {'status': 'error', 'message': 'Error deleting file.'}
     
-def delete_file_globally(file_name, lease_manager: LeaseManager):
+def delete_file_globally(file_name, lease_manager: LeaseManager, requestee):
     # Get metadata
     # Contact primary to delete globally if its not primary
     # If it is primary then delete locally and send request to other replicas
@@ -559,6 +567,9 @@ def delete_file_globally(file_name, lease_manager: LeaseManager):
             print(f"Error leasing :{file_name}")
             return {'status': 'error', 'message': f'Error deleting file {file_name}'}
         for replica in replicas:
+            # ignore if requestee is a replica
+            if replica == requestee:
+                continue
             server_socket = contact_data_server(port=int(replica))
             message = {'file_name': file_name, 'operation': 'delete_locally'}
             server_socket.send(json.dumps(message).encode())
@@ -585,6 +596,8 @@ def delete_file_globally(file_name, lease_manager: LeaseManager):
         server_socket.send(json.dumps(message).encode())
         response = server_socket.recv(1024).decode()
         response = json.loads(response)
+        if response['status'] == 'success':
+            delete_file_locally(file_name)
         return response
 
     return {'status': 'success', 'message': 'File deleted globally.'}
@@ -635,7 +648,7 @@ def main():
             case 'delete_locally':
                 response = delete_file_locally(file_name)
             case 'delete_globally':
-                response = delete_file_globally(file_name, lease_manager)
+                response = delete_file_globally(file_name, lease_manager, str(addr[1]))
                 print(f'global deletion response {response}')
                 if response['status'] == 'success':
                     data_server.remove_primary(file_name)

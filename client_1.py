@@ -281,7 +281,7 @@ if __name__ == "__main__":
                 response = read_file(file_name)
                 print("Exiting <read> mode...\n")
             
-            if "<seek>" in _input:
+            elif "<seek>" in _input:
                 while not check_valid_input(_input):
                     _input = input('Invalid input; please try using a valid name')
 
@@ -302,10 +302,6 @@ if __name__ == "__main__":
             
             elif "<list>" in _input:
                 response = list_files()
-                if response:
-                    print("Files listed successfully!")
-                else:
-                    print("Failed to list files.")
                 print("Exiting <list> mode...\n")
 
             elif "<create>" in _input:

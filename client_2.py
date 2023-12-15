@@ -4,7 +4,7 @@ import random
 import time
 
 HOST = "127.0.0.1"
-PORTS = ['11236']
+PORTS = ['11235']
 MAX_RETRIES = 3  
 RETRY_INTERVAL = 2
 
@@ -281,7 +281,7 @@ if __name__ == "__main__":
                 response = read_file(file_name)
                 print("Exiting <read> mode...\n")
             
-            if "<seek>" in _input:
+            elif "<seek>" in _input:
                 while not check_valid_input(_input):
                     _input = input('Invalid input; please try using a valid name')
 

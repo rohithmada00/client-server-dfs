@@ -308,10 +308,6 @@ if __name__ == "__main__":
             
             elif "<list>" in _input:
                 response = list_files()
-                if response:
-                    print("Files listed successfully!")
-                else:
-                    print("Failed to list files.")
                 print("Exiting <list> mode...\n")
 
             elif "<create>" in _input:

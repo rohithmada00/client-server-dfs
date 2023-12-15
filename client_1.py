@@ -14,6 +14,7 @@ def instructions():
     print("<write> [filename] - write to file")
     print("<read> [filename] - read from file")
     print("<seek> [filename] index - read from specific location")
+    print("<delete> [filename] - delete a file")
     print("<fail> - fail a data server")
     print("<list> - lists all existing files")
     print("<instructions> - lets you see the instructions again")

@@ -397,7 +397,7 @@ def write_file_globally(file_name, lease_duration, conn :socket):
                 status = response.get('status', 'error')
                 message = response.get('message')
 
-                if PORT not in replicas:
+                if str(PORT) not in replicas:
                     # update nameserver with updated metadata
                     ns_conn = contact_name_server()
                     message = {
@@ -406,7 +406,7 @@ def write_file_globally(file_name, lease_duration, conn :socket):
                         'content' : {
                                         "file_path": file_name,
                                         "primary_server": primary_server,
-                                        "replicas": replicas+[PORT],
+                                        "replicas": replicas+[str(PORT)],
                                         "latest_commit_id": str(int(latest_commit_id)+1) if latest_commit_id is not None else latest_commit_id
                                     }
                     }

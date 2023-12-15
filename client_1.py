@@ -9,10 +9,12 @@ MAX_RETRIES = 3
 RETRY_INTERVAL = 2
 
 def instructions():
-    # instructions to the user
     print("------------------- INSTRUCTIONS ----------------------")
-    print("<write> [filename] - write to file mode")
-    print("<read> [filename] - read from file mode")
+    print("<create> [filename] - create file")
+    print("<write> [filename] - write to file")
+    print("<read> [filename] - read from file")
+    print("<seek> [filename] index - read from specific location")
+    print("<fail> - fail a data server")
     print("<list> - lists all existing files")
     print("<instructions> - lets you see the instructions again")
     print("<quit> - exits the application")

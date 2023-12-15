@@ -4,6 +4,7 @@ import time
 from collections import defaultdict
 from threading import Event, Thread
 import os
+import random
 
 PATH = 'replica_5/'
 PORT = 11238
@@ -148,6 +149,22 @@ def contact_name_server():
     client_socket.connect(('localhost', 12345))
     return client_socket
 
+def contact_any_server(ports):
+    for i in range(len(ports)):
+        port = ports[i]
+        print(f'Connecting to  server on port {port}...')
+        client_socket = socket(AF_INET, SOCK_STREAM)
+
+        try:
+            client_socket.connect(('localhost', int(port)))
+            return client_socket  # Successful connection, return the socket
+        except Exception as e:
+            print(f"Error connecting to server on port {port}: {e}")
+            time.sleep(1)  # Wait before retrying
+
+    print(f"Failed to connect to any server after {len(ports)} attempts.")
+    return None  # Return None to indicate failure
+
 def fail_server(data_server: DataServer, lease_manager: LeaseManager, conn: socket):
     print('server is about to fail')
     # TODO: fail all lease grantings/ pendings
@@ -212,9 +229,13 @@ def read_file_globally(file_name):
             return {'status' : 'error', 'message' : 'File does not exist in the system...'}
 
         else:
-            # contact primary
+            # contact any server
             primary_server = data['primary_server']
-            server_socket = contact_data_server(int(primary_server))
+            replicas = data['replicas']
+            server_socket = contact_any_server([primary_server]+replicas)
+            if server_socket is None:
+                print(f'Unable to connect to any server')
+                return {'status' : 'error', 'message' : 'Unable to connect to any server'}
             message = {'file_name': file_name, 'operation': 'r'}
             message = json.dumps(message).encode()
             server_socket.send(message)

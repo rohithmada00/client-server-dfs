@@ -592,7 +592,7 @@ def delete_file_globally(file_name, lease_manager: LeaseManager, requestee):
         print(f'response to deleting metadata : {response}')
     else:
         server_socket = contact_data_server(port=int(primary_server))
-        message = {'file_name': file_name, 'operation': 'delete_globally'}
+        message = {'file_name': file_name, 'operation': 'delete_globally', 'content': {'requestee' : str(PORT)}}
         server_socket.send(json.dumps(message).encode())
         response = server_socket.recv(1024).decode()
         response = json.loads(response)
@@ -618,7 +618,7 @@ def main():
 
         file_name = client_message.get('file_name', '')
         operation = client_message.get('operation', '')
-        content = client_message.get('content', '')
+        content = client_message.get('content', {})
         lease_duration = client_message.get('lease_duration', 120)
 
         print(f'file name {file_name}, operation {operation}, content {content}')
@@ -648,7 +648,7 @@ def main():
             case 'delete_locally':
                 response = delete_file_locally(file_name)
             case 'delete_globally':
-                response = delete_file_globally(file_name, lease_manager, str(addr[1]))
+                response = delete_file_globally(file_name, lease_manager, content['requestee'])
                 print(f'global deletion response {response}')
                 if response['status'] == 'success':
                     data_server.remove_primary(file_name)

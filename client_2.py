@@ -163,6 +163,9 @@ def delete_file(file_name):
     message = {
         'file_name': file_name,
         'operation': 'delete_globally',
+        'content' :{
+            'requestee': ''
+        }
     }
     data = json.dumps(message).encode()
     client_socket.send(data)
